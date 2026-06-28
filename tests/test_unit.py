@@ -292,6 +292,7 @@ class TestSummaryVisualizationService:
     """Daily summary visualizations should keep per-memory metadata aligned."""
 
     def test_confidence_lines_do_not_shift_across_memory_blocks(self, tmp_path):
+        """Missing confidence metadata must not consume the next block's value."""
         from memanto.app.services.summary_visualization_service import (
             SummaryVisualizationService,
         )
