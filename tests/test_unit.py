@@ -281,6 +281,7 @@ class TestMemoryWriteServiceDelete:
         ],
     )
     def test_delete_memory_handles_backend_shapes(self, response, expected):
+        """Translate known backend delete responses into boolean outcomes."""
         from memanto.app.services.memory_write_service import MemoryWriteService
 
         client = MagicMock()
