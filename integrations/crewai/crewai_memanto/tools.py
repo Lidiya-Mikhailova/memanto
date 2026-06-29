@@ -104,13 +104,13 @@ class RememberInput(BaseModel):
         ...,
         min_length=1,
         max_length=100,
-        description="Short title for the memory (max 100 characters).",
+        description="Short title for the memory (1-100 characters).",
     )
     content: str = Field(
         ...,
         min_length=1,
         max_length=10000,
-        description="The memory content to store (max 10000 characters). Be concise and atomic.",
+        description="The memory content to store (1-10000 characters). Be concise and atomic.",
     )
     confidence: float = Field(
         ...,
