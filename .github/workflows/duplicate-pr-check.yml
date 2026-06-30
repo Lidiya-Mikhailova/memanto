@@ -6,7 +6,7 @@ name: Duplicate PR Check
 # it reads PR metadata via the API.
 on:
   pull_request_target:
-    types: [opened, reopened, edited]
+    types: [opened, reopened, edited, synchronize]
   # Manual "Run workflow" button: Actions tab -> Duplicate PR Check -> Run workflow.
   workflow_dispatch:
     inputs:
@@ -34,6 +34,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Script gets GITHUB_TOKEN via env; no need to leave creds in git config.
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
