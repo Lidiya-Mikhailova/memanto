@@ -746,6 +746,77 @@ class TestMEMANTOAPI:
         assert response.json()["successful"] == 2
 
     @pytest.mark.asyncio
+    async def test_failed_batch_remember_does_not_log_phantom_summary(
+        self, client, auth_headers, mock_moorcheh, test_env_setup
+    ):
+        """Failed batch uploads must not appear as stored memories in summaries."""
+        await client.post(
+            "/api/v2/agents",
+            headers=auth_headers,
+            json={"agent_id": self.TEST_AGENT_ID},
+        )
+        activate_resp = await client.post(
+            f"/api/v2/agents/{self.TEST_AGENT_ID}/activate", headers=auth_headers
+        )
+        token = activate_resp.json()["session_token"]
+
+        mock_moorcheh.documents.upload.return_value = {"status": "error"}
+
+        headers = {**auth_headers, "X-Session-Token": token}
+        response = await client.post(
+            f"/api/v2/agents/{self.TEST_AGENT_ID}/batch-remember",
+            headers=headers,
+            json={
+                "memories": [
+                    {"content": "Phantom batch 1", "type": "fact"},
+                    {"content": "Phantom batch 2", "type": "fact"},
+                ]
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["successful"] == 0
+        assert data["failed"] == 2
+
+        summary_files = list(
+            (test_env_setup / ".memanto" / "sessions").glob("*_summary.md")
+        )
+        assert summary_files == []
+
+    @pytest.mark.asyncio
+    async def test_failed_remember_does_not_log_phantom_summary(
+        self, client, auth_headers, mock_moorcheh, test_env_setup
+    ):
+        """Failed single-memory uploads must not appear in session summaries."""
+        await client.post(
+            "/api/v2/agents",
+            headers=auth_headers,
+            json={"agent_id": self.TEST_AGENT_ID},
+        )
+        activate_resp = await client.post(
+            f"/api/v2/agents/{self.TEST_AGENT_ID}/activate", headers=auth_headers
+        )
+        token = activate_resp.json()["session_token"]
+
+        mock_moorcheh.documents.upload.return_value = {"status": "error"}
+
+        headers = {**auth_headers, "X-Session-Token": token}
+        response = await client.post(
+            f"/api/v2/agents/{self.TEST_AGENT_ID}/remember",
+            headers=headers,
+            json={"content": "Phantom single memory", "type": "fact"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "error"
+
+        summary_files = list(
+            (test_env_setup / ".memanto" / "sessions").glob("*_summary.md")
+        )
+        assert summary_files == []
+
+    @pytest.mark.asyncio
     async def test_delete_memory_with_session(
         self, client, auth_headers, mock_moorcheh
     ):
@@ -921,6 +992,55 @@ class TestMEMANTOAPI:
         uploaded_doc = mock_moorcheh.documents.upload.call_args.kwargs["documents"][0]
         assert uploaded_doc["memory_type"] == "fact"
         assert uploaded_doc["provenance"] == "inferred"
+
+    @pytest.mark.asyncio
+    async def test_failed_extract_does_not_log_phantom_summary(
+        self, client, auth_headers, mock_moorcheh, test_env_setup
+    ):
+        """Failed extracted-memory batch writes must not appear in summaries."""
+        await client.post(
+            "/api/v2/agents",
+            headers=auth_headers,
+            json={"agent_id": self.TEST_AGENT_ID},
+        )
+        activate_resp = await client.post(
+            f"/api/v2/agents/{self.TEST_AGENT_ID}/activate", headers=auth_headers
+        )
+        assert activate_resp.status_code == 200, activate_resp.text
+        token = activate_resp.json()["session_token"]
+        headers = {**auth_headers, "X-Session-Token": token}
+
+        mock_moorcheh.answer.generate.return_value = {
+            "answer": json.dumps(
+                [
+                    {
+                        "type": "fact",
+                        "title": "Phantom extracted memory",
+                        "content": "Phantom extracted memory",
+                        "confidence": 0.88,
+                    }
+                ]
+            ),
+            "sources": [],
+        }
+        mock_moorcheh.documents.upload.return_value = {"status": "error"}
+
+        response = await client.post(
+            f"/api/v2/agents/{self.TEST_AGENT_ID}/remember/extract",
+            headers=headers,
+            json={
+                "messages": [{"role": "user", "content": "Phantom extracted memory"}],
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["successful"] == 0
+        assert data["failed"] == 1
+        summary_files = list(
+            (test_env_setup / ".memanto" / "sessions").glob("*_summary.md")
+        )
+        assert summary_files == []
 
     @pytest.mark.asyncio
     async def test_recall_temporal_api(self, client, auth_headers, mock_moorcheh):

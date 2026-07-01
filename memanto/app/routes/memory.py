@@ -47,6 +47,18 @@ from memanto.cli.config.manager import ConfigManager
 router = APIRouter()
 
 _config_manager = ConfigManager()
+_SUCCESSFUL_WRITE_STATUSES = {"queued", "success", "ok"}
+
+
+def _write_result_succeeded(item: object) -> bool:
+    return (
+        isinstance(item, dict)
+        and str(item.get("status", "")).lower() in _SUCCESSFUL_WRITE_STATUSES
+    )
+
+
+def _batch_result_succeeded(item: object) -> bool:
+    return _write_result_succeeded(item)
 
 
 class RecallRequest(BaseModel):
@@ -209,22 +221,25 @@ async def remember(
 
         # Store memory in agent's namespace.
         result = await asyncio.to_thread(write_service.store_memory, memory)
+        status = str(result.get("status", "unknown"))
+        response_status = "queued" if _write_result_succeeded(result) else status
 
-        # Log to local session Markdown summary
-        session_service = get_session_service()
-        await asyncio.to_thread(
-            session_service.log_memory_to_session_summary,
-            agent_id=agent_id,
-            session_id=session.session_id,
-            memory_record=memory,
-        )
+        # Log to local session Markdown summary only after a durable write.
+        if _write_result_succeeded(result):
+            session_service = get_session_service()
+            await asyncio.to_thread(
+                session_service.log_memory_to_session_summary,
+                agent_id=agent_id,
+                session_id=session.session_id,
+                memory_record=memory,
+            )
 
         return {
             "memory_id": result["id"],
             "agent_id": agent_id,
             "session_id": session.session_id,
             "namespace": session.namespace,
-            "status": "queued",
+            "status": response_status,
             "provenance": request.provenance,
             "confidence": request.confidence,
             # Resolved memory type (auto-parsed when not explicitly provided)
@@ -291,7 +306,11 @@ async def batch_remember(
         # Log each memory to local MD summary
         session_service = get_session_service()
 
-        for record in memory_records:
+        batch_results = result.get("results", [])
+        for index, record in enumerate(memory_records):
+            item_result = batch_results[index] if index < len(batch_results) else None
+            if not _batch_result_succeeded(item_result):
+                continue
             await asyncio.to_thread(
                 session_service.log_memory_to_session_summary,
                 agent_id=agent_id,
@@ -456,11 +475,14 @@ async def extract_memories_from_conversation(
         )
 
         session_service = get_session_service()
+        batch_results = result.get("results", [])
         for index, record in enumerate(memory_records):
-            batch_results = result.get("results", [])
             memory_id = (
                 batch_results[index].get("id") if index < len(batch_results) else None
             )
+            item_result = batch_results[index] if index < len(batch_results) else None
+            if not _batch_result_succeeded(item_result):
+                continue
             await asyncio.to_thread(
                 session_service.log_memory_to_session_summary,
                 agent_id=agent_id,

@@ -288,6 +288,44 @@ class TestMemoryWriteServiceDelete:
         assert MemoryWriteService(client).delete_memory("m1", "ns") is expected
 
 
+class TestMemoryWriteServiceBatch:
+    def test_batch_upload_error_counts_each_pending_memory_as_failed(self):
+        from memanto.app.core import MemoryRecord
+        from memanto.app.services.memory_write_service import MemoryWriteService
+
+        client = MagicMock()
+        client.documents.upload.return_value = {"status": "error"}
+
+        memories = [
+            MemoryRecord(
+                type="fact",
+                title="One",
+                content="First memory",
+                agent_id="agent-1",
+                actor_id="agent-1",
+                source="user",
+            ),
+            MemoryRecord(
+                type="fact",
+                title="Two",
+                content="Second memory",
+                agent_id="agent-1",
+                actor_id="agent-1",
+                source="user",
+            ),
+        ]
+
+        result = MemoryWriteService(client).batch_store_memories(memories)
+
+        assert result["successful"] == 0
+        assert result["failed"] == 2
+        assert [item["status"] for item in result["results"]] == ["failed", "failed"]
+        assert all(
+            "Batch upload returned status" in item["error"]
+            for item in result["results"]
+        )
+
+
 class TestForgetEndToEnd:
     """End-to-end ``forget`` flow through ``DirectClient``: create agent →
     activate → delete_memory. Asserts on-prem's response shape
@@ -364,6 +402,114 @@ class TestForgetEndToEnd:
         result = client.delete_memory(agent_id="test-agent", memory_id="mem-xyz")
         assert result["status"] == "deleted"
         assert result["memory_id"] == "mem-xyz"
+
+    def test_failed_batch_does_not_write_session_summary(self, direct_client):
+        client, moorcheh = direct_client
+        moorcheh.documents.upload.return_value = {"status": "error"}
+        sessions_dir = client._get_session_service().sessions_dir
+        summaries_before = set(sessions_dir.glob("*_summary.md"))
+
+        result = client.batch_remember(
+            agent_id="test-agent",
+            memories=[
+                {"content": "Phantom CLI batch 1", "type": "fact"},
+                {"content": "Phantom CLI batch 2", "type": "fact"},
+            ],
+        )
+
+        assert result["successful"] == 0
+        assert result["failed"] == 2
+        summaries_after = set(sessions_dir.glob("*_summary.md"))
+        assert summaries_after == summaries_before
+        assert not any(
+            "Phantom CLI batch" in path.read_text(encoding="utf-8")
+            for path in summaries_after
+        )
+
+    def test_failed_remember_does_not_write_session_summary(self, direct_client):
+        client, moorcheh = direct_client
+        moorcheh.documents.upload.return_value = {"status": "error"}
+        sessions_dir = client._get_session_service().sessions_dir
+        summaries_before = set(sessions_dir.glob("*_summary.md"))
+
+        result = client.remember(
+            agent_id="test-agent",
+            memory_type="fact",
+            title="Phantom CLI single",
+            content="Phantom CLI single",
+        )
+
+        assert result["status"] == "error"
+        summaries_after = set(sessions_dir.glob("*_summary.md"))
+        assert summaries_after == summaries_before
+        assert not any(
+            "Phantom CLI single" in path.read_text(encoding="utf-8")
+            for path in summaries_after
+        )
+
+
+class TestSdkClientSessionSummary:
+    def test_failed_remember_does_not_write_session_summary(self):
+        from memanto.cli.client.sdk_client import SdkClient
+
+        client = SdkClient(api_key="test-key")
+        client.session_token = "token"
+        session = MagicMock(namespace="memanto_agent_test-agent")
+        client._get_validated_session_for_agent = MagicMock(return_value=session)
+        write_service = MagicMock()
+        write_service.store_memory.return_value = {
+            "id": "mem-1",
+            "namespace": "memanto_agent_test-agent",
+            "status": "error",
+        }
+        client._get_write_service = MagicMock(return_value=write_service)
+        session_service = MagicMock()
+        client._get_session_service = MagicMock(return_value=session_service)
+
+        result = client.remember(
+            agent_id="test-agent",
+            memory_type="fact",
+            title="Phantom SDK single",
+            content="Phantom SDK single",
+        )
+
+        assert result["status"] == "error"
+        session_service.log_memory_to_session_summary.assert_not_called()
+
+    def test_failed_batch_items_do_not_write_session_summary(self):
+        from memanto.cli.client.sdk_client import SdkClient
+
+        client = SdkClient(api_key="test-key")
+        client.session_token = "token"
+        session = MagicMock(namespace="memanto_agent_test-agent")
+        client._get_validated_session_for_agent = MagicMock(return_value=session)
+        write_service = MagicMock()
+        write_service.batch_store_memories.return_value = {
+            "total_submitted": 2,
+            "successful": 1,
+            "failed": 1,
+            "results": [
+                {"id": "mem-failed", "status": "failed", "error": "upload failed"},
+                {"id": "mem-ok", "status": "queued"},
+            ],
+        }
+        client._get_write_service = MagicMock(return_value=write_service)
+        session_service = MagicMock()
+        client._get_session_service = MagicMock(return_value=session_service)
+
+        result = client.batch_remember(
+            agent_id="test-agent",
+            memories=[
+                {"content": "Phantom SDK batch", "type": "fact"},
+                {"content": "Durable SDK batch", "type": "fact"},
+            ],
+        )
+
+        assert result["successful"] == 1
+        session_service.log_memory_to_session_summary.assert_called_once()
+        logged = session_service.log_memory_to_session_summary.call_args.kwargs
+        assert logged["memory_id"] == "mem-ok"
+        assert logged["memory_record"].content == "Durable SDK batch"
 
 
 class TestMEMANTOArchitecture:

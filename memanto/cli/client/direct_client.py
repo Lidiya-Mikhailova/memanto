@@ -44,6 +44,19 @@ from memanto.cli.config.manager import ConfigManager
 
 logger = logging.getLogger(__name__)
 
+_SUCCESSFUL_WRITE_STATUSES = {"queued", "success", "ok"}
+
+
+def _write_result_succeeded(item: object) -> bool:
+    return (
+        isinstance(item, dict)
+        and str(item.get("status", "")).lower() in _SUCCESSFUL_WRITE_STATUSES
+    )
+
+
+def _batch_result_succeeded(item: object) -> bool:
+    return _write_result_succeeded(item)
+
 
 # Moorcheh's API Gateway strictly requires lowercase for 'x-api-key'.
 # This string subclass defeats urllib's automatic title-casing.
@@ -635,8 +648,8 @@ class DirectClient:
         logger.debug("Storing memory for agent '%s' (type=%s)", agent_id, memory_type)
         result = self._get_write_service().store_memory(memory)
 
-        # Log to local session Markdown summary
-        if self.session_token:
+        # Log to local session Markdown summary only after a durable write.
+        if self.session_token and _write_result_succeeded(result):
             session_id = "unknown"
             self._get_session_service().log_memory_to_session_summary(
                 agent_id=agent_id,
@@ -745,7 +758,10 @@ class DirectClient:
             batch_results = result.get("results", [])
 
             for i, mem in enumerate(memory_records):
-                mem_id = batch_results[i].get("id") if i < len(batch_results) else None
+                item_result = batch_results[i] if i < len(batch_results) else None
+                if not _batch_result_succeeded(item_result):
+                    continue
+                mem_id = batch_results[i].get("id")
                 session_svc.log_memory_to_session_summary(
                     agent_id=agent_id,
                     session_id=session_id,
