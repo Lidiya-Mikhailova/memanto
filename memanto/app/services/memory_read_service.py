@@ -363,6 +363,7 @@ class MemoryReadService:
         items: list[Any] = []
         for ns in namespaces:
             next_token: str | None = None
+            seen_tokens: set[str] = set()
             while True:
                 kwargs: dict[str, Any] = {"namespace_name": ns, "limit": 100}
                 if next_token:
@@ -375,8 +376,9 @@ class MemoryReadService:
                 if not pagination.get("has_more"):
                     break
                 next_token = pagination.get("next_token")
-                if not next_token:
+                if not next_token or next_token in seen_tokens:
                     break
+                seen_tokens.add(next_token)
 
         seen_ids: set[str] = set()
         memories: list[dict[str, Any]] = []
