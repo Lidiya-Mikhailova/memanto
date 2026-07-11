@@ -422,7 +422,7 @@ export default function (pi: ExtensionAPI) {
     const child = spawn(
       "memanto",
       ["memory", "sync", "--project-dir", ctx.cwd],
-      { stdio: "ignore", detached: true, shell: process.platform === "win32" },
+      { stdio: "ignore", detached: true },
     );
     child.unref();
 
