@@ -429,8 +429,8 @@ export default function (pi: ExtensionAPI) {
     child.on("error", () => {
       /* memanto CLI not installed / not on PATH — ignore. */
     });
-    child.on("close", () => {
-      if (ctx.hasUI) {
+    child.on("close", (code) => {
+      if (code === 0 && ctx.hasUI) {
         try {
           ctx.ui.notify("Memanto: memory synced", "info");
         } catch {
