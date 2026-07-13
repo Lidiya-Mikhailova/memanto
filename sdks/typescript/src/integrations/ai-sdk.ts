@@ -2,31 +2,10 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import type { Memanto } from "../index.js";
+import { MEMORY_TYPES, type MemantoToolName, type MemoryType } from "./memory-types.js";
 
-/**
- * Supported Memanto memory types. Mirrors the server-side
- * `VALID_MEMORY_TYPES` contract so the model can only emit valid values.
- */
-export const MEMORY_TYPES = [
-  "fact",
-  "preference",
-  "goal",
-  "decision",
-  "artifact",
-  "learning",
-  "event",
-  "instruction",
-  "relationship",
-  "context",
-  "observation",
-  "commitment",
-  "error",
-] as const;
-
-export type MemoryType = (typeof MEMORY_TYPES)[number];
-
-/** Names of the tools produced by {@link createMemantoTools}. */
-export type MemantoToolName = "recallMemory" | "rememberMemory" | "answerMemory";
+export { MEMORY_TYPES };
+export type { MemantoToolName, MemoryType };
 
 export interface CreateMemantoToolsOptions {
   /**
