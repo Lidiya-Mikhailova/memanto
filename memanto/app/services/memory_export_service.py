@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from memanto.app.config import get_data_dir
 from memanto.app.utils.validation import validate_output_path, validate_safe_id
 
 # Memory type metadata: (label, emoji, description)
@@ -89,7 +90,7 @@ class MemoryExportService:
     """Formats and writes a structured memory.md for an agent."""
 
     def __init__(self, exports_dir: Path | None = None):
-        self.exports_dir = exports_dir or (Path.home() / ".memanto" / "exports")
+        self.exports_dir = exports_dir or (get_data_dir() / "exports")
 
     # Public API
     def format_memory_md(

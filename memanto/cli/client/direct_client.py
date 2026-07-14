@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
+from memanto.app.config import get_data_dir
 from memanto.app.constants import (
     ALLOWED_UPDATE_FIELDS as _ALLOWED_UPDATE_FIELDS,
 )
@@ -1490,7 +1491,7 @@ class DirectClient:
         Args:
             agent_id: Target agent.
             output_path: Custom output path. Defaults to
-                ``~/.memanto/exports/{agent_id}_memory.md``.
+                the active backend's export directory.
             limit_per_type: Max memories per type (default 25).
 
         Returns:
@@ -1541,7 +1542,7 @@ class DirectClient:
         """
         Sync agent memories to a project directory's MEMORY.md.
 
-        Uses the cached export at ``~/.memanto/exports/{agent_id}_memory.md``
+        Uses the cached export in the active backend's data directory
         when available. Falls back to a fresh export if
         the cache file does not exist.
 
@@ -1555,7 +1556,7 @@ class DirectClient:
             (``"cache"`` or ``"fresh"``).
         """
 
-        cache_path = Path.home() / ".memanto" / "exports" / f"{agent_id}_memory.md"
+        cache_path = get_data_dir() / "exports" / f"{agent_id}_memory.md"
         target_path = Path(project_dir) / "MEMORY.md"
         target_path.parent.mkdir(parents=True, exist_ok=True)
 

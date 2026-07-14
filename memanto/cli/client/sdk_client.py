@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
+from memanto.app.config import get_data_dir
 from memanto.app.constants import (
     ALLOWED_UPDATE_FIELDS as _ALLOWED_UPDATE_FIELDS,
 )
@@ -1411,11 +1412,11 @@ class SdkClient:
         Returns:
             Dict with ``output_path``, ``total_memories``, ``source``.
         """
-        # Run export function first (ensures ~/.memanto/exports/... is fresh)
+        # Run export function first (ensures the active backend cache is fresh)
         self.export_memory_md(agent_id=agent_id, limit_per_type=limit_per_type)
 
         # Perform sync from cache to project
-        cache_path = Path.home() / ".memanto" / "exports" / f"{agent_id}_memory.md"
+        cache_path = get_data_dir() / "exports" / f"{agent_id}_memory.md"
         target_path = Path(project_dir) / "MEMORY.md"
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
