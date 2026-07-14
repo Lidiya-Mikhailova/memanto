@@ -1412,16 +1412,12 @@ class SdkClient:
         Returns:
             Dict with ``output_path``, ``total_memories``, ``source``.
         """
-        # Run export function first (ensures the active backend cache is fresh)
-        self.export_memory_md(agent_id=agent_id, limit_per_type=limit_per_type)
-
-        # Perform sync from cache to project
         cache_path = get_data_dir() / "exports" / f"{agent_id}_memory.md"
         target_path = Path(project_dir) / "MEMORY.md"
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
         if cache_path.exists():
-            # Copy freshly updated cache to project
+            # Fast path: copy cached export without an API-backed refresh.
             shutil.copy2(str(cache_path), str(target_path))
             content = cache_path.read_text(encoding="utf-8")
             mem_count = content.count("### ")
@@ -1431,9 +1427,17 @@ class SdkClient:
                 "source": "cache",
             }
 
+        export_result = self.export_memory_md(
+            agent_id=agent_id,
+            limit_per_type=limit_per_type,
+        )
+        exported_path = Path(export_result["output_path"])
+        if exported_path.exists():
+            shutil.copy2(str(exported_path), str(target_path))
+
         return {
             "output_path": str(target_path.resolve()),
-            "total_memories": 0,
+            "total_memories": export_result.get("total_memories", 0),
             "source": "fresh",
         }
 

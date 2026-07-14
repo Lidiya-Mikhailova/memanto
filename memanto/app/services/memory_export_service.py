@@ -202,8 +202,8 @@ class MemoryExportService:
         Args:
             agent_id: Agent identifier.
             memories_by_type: Dict mapping memory type -> list of memory dicts.
-            output_path: Custom output path. Defaults to
-                ``~/.memanto/exports/{agent_id}_memory.md``.
+            output_path: Custom output path. Defaults to the active backend's
+                export directory with filename ``{agent_id}_memory.md``.
 
         Returns:
             Absolute Path to the written file.
