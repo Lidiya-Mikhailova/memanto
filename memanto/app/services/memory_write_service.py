@@ -229,18 +229,27 @@ class MemoryWriteService:
                     if result["status"] == "pending":
                         result["status"] = moorcheh_status
 
-            # Count successes and failures
+            # Count successes, failures, and namespace-rejected items separately
+            # so that successful + failed + rejected == total_submitted always.
+            _known = set(SUCCESSFUL_UPLOAD_STATUSES) | {"failed", "rejected"}
             successful = sum(
                 1
                 for r in results
                 if str(r["status"]).lower() in SUCCESSFUL_UPLOAD_STATUSES
             )
             failed = sum(1 for r in results if str(r["status"]).lower() == "failed")
+            rejected = sum(1 for r in results if str(r["status"]).lower() == "rejected")
+            # Absorb any non-standard upload statuses into failed so the invariant holds
+            failed += len(results) - successful - failed - rejected
+            for r in results:
+                if str(r["status"]).lower() not in _known:
+                    r["status"] = "failed"
 
             return {
                 "total_submitted": len(memories),
                 "successful": successful,
                 "failed": failed,
+                "rejected": rejected,
                 "namespace": first_namespace,
                 "results": results,
             }

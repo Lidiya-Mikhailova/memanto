@@ -578,12 +578,14 @@ class MemoryReadService:
                     # Only include if not expired
                     if expires_dt > now:
                         filtered.append(result)
-                else:
-                    # If expires_at is already datetime or not parseable, keep it
-                    filtered.append(result)
+                elif isinstance(expires_at, datetime):
+                    tz_aware = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=timezone.utc)
+                    if tz_aware > now:
+                        filtered.append(result)
+                # Any other type: fail closed - treat as expired and exclude.
             except (ValueError, AttributeError):
-                # If we can't parse, keep the memory (fail open)
-                filtered.append(result)
+                # Cannot parse expiry - fail closed: exclude the memory.
+                pass
 
         return filtered
 
