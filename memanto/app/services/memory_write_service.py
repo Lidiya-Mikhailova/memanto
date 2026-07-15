@@ -2,7 +2,7 @@
 Memory Write Service
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -69,7 +69,7 @@ class MemoryWriteService:
             if not memory.id:
                 memory.id = generate_memory_id()
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             self._apply_timestamps(memory, now)
 
             # Auto parse memory type
@@ -140,7 +140,7 @@ class MemoryWriteService:
             validated_documents = []
 
             # Enforce server-side timestamps for batch (single timestamp for all)
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             for memory in memories:
                 try:
@@ -333,7 +333,7 @@ class MemoryWriteService:
                         pass  # Keep default
                 else:
                     updated_memory.created_at = raw_created
-            updated_memory.updated_at = datetime.utcnow()
+            updated_memory.updated_at = datetime.now(timezone.utc)
 
             # Handle TTL
             if "ttl_seconds" in updates:
@@ -345,21 +345,9 @@ class MemoryWriteService:
 
             # Step 3: Delete old version
             from typing import Any, cast
-
-            delete_result = cast(
-                dict[str, Any],
-                self.client.documents.delete(namespace_name=namespace, ids=[memory_id]),
-            )
-
-            if not self._deletion_succeeded(delete_result):
-                raise MemoryError(f"Failed to delete old version of memory {memory_id}")
+            from moorcheh_sdk.types.document import Document
 
             validation_result = {"action": "store", "reason": "MVP direct store"}
-
-            # Step 4: Upload new version
-            from typing import cast
-
-            from moorcheh_sdk.types.document import Document
 
             document = cast(Document, updated_memory.to_moorcheh_document())
 
@@ -378,9 +366,32 @@ class MemoryWriteService:
                     ):
                         extra_document[key] = existing_meta[key]
 
-            upload_result = self.client.documents.upload(
-                namespace_name=namespace, documents=[document]
+            delete_result = cast(
+                dict[str, Any],
+                self.client.documents.delete(namespace_name=namespace, ids=[memory_id]),
             )
+
+            if not self._deletion_succeeded(delete_result):
+                raise MemoryError(f"Failed to delete old version of memory {memory_id}")
+
+            # Step 4: Upload new version with rollback
+            try:
+                upload_result = self.client.documents.upload(
+                    namespace_name=namespace, documents=[document]
+                )
+            except Exception as e:
+                try:
+                    old_document = cast(Document, {
+                        "id": memory_id,
+                        "text": existing_memory_data.get("content", ""),
+                        "metadata": existing_meta
+                    })
+                    self.client.documents.upload(
+                        namespace_name=namespace, documents=[old_document]
+                    )
+                except Exception:
+                    pass
+                raise MemoryError(f"Upload failed. Old memory restored. Error: {e}")
 
             return {
                 "id": memory_id,
