@@ -586,10 +586,12 @@ class MemoryReadService:
                     )
                     if tz_aware > now:
                         filtered.append(result)
-                # Any other type: fail closed - treat as expired and exclude.
+                else:
+                    # Any other type: fail open - keep the memory
+                    filtered.append(result)
             except (ValueError, AttributeError):
-                # Cannot parse expiry - fail closed: exclude the memory.
-                pass
+                # If we can't parse, keep the memory (fail open)
+                filtered.append(result)
 
         return filtered
 
