@@ -403,10 +403,6 @@ class TestMemoryWriteServiceDelete:
         from memanto.app.services.memory_write_service import MemoryWriteService
 
         client = MagicMock()
-        client.documents.delete.return_value = {
-            "status": "success",
-            "deleted_ids": ["mem-1"],
-        }
         client.documents.upload.return_value = {"status": "queued"}
         existing_memory = {
             "id": "mem-1",
@@ -434,16 +430,12 @@ class TestMemoryWriteServiceDelete:
 
         assert result["action"] == "updated"
         assert result["status"] == "queued"
-        client.documents.delete.assert_called_once_with(
-            namespace_name="memanto_agent_test-agent", ids=["mem-1"]
-        )
         client.documents.upload.assert_called_once()
 
     def test_update_memory_preserves_extra_fields_but_drops_removed_trust_fields(self):
         from memanto.app.services.memory_write_service import MemoryWriteService
 
         client = MagicMock()
-        client.documents.delete.return_value = {"status": "success"}
         client.documents.upload.return_value = {"status": "queued"}
         existing_memory = {
             "id": "mem-1",

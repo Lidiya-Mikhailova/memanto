@@ -265,13 +265,12 @@ class MemoryWriteService:
         context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
-        Update existing memory using delete-and-recreate pattern
+        Update existing memory.
 
-        Since Moorcheh doesn't support in-place updates, we:
+        Moorcheh supports overwriting documents by ID, so we:
         1. Retrieve the existing memory
         2. Apply updates to create new version
-        3. Delete old version
-        4. Upload new version with same ID
+        3. Upload new version with same ID (overwrites)
 
         Args:
             memory_id: ID of memory to update
@@ -352,7 +351,7 @@ class MemoryWriteService:
                 if metadata.get("expires_at"):
                     updated_memory.expires_at = metadata["expires_at"]
 
-            # Step 3: Delete old version
+            # Step 3: Upload new version (overwrites existing document with same ID)
             from typing import Any, cast
             from moorcheh_sdk.types.document import Document
 
@@ -375,39 +374,19 @@ class MemoryWriteService:
                     ):
                         extra_document[key] = existing_meta[key]
 
-            delete_result = cast(
-                dict[str, Any],
-                self.client.documents.delete(namespace_name=namespace, ids=[memory_id]),
-            )
-
-            if not self._deletion_succeeded(delete_result):
-                raise MemoryError(f"Failed to delete old version of memory {memory_id}")
-
-            # Step 4: Upload new version with rollback
             try:
                 upload_result = self.client.documents.upload(
                     namespace_name=namespace, documents=[document]
                 )
             except Exception as e:
-                try:
-                    old_document = cast(Document, {
-                        "id": memory_id,
-                        "text": existing_memory_data.get("content", ""),
-                        "metadata": existing_meta
-                    })
-                    self.client.documents.upload(
-                        namespace_name=namespace, documents=[old_document]
-                    )
-                except Exception:
-                    pass
-                raise MemoryError(f"Upload failed. Old memory restored. Error: {e}")
+                raise MemoryError(f"Upload failed. Error: {e}")
 
             return {
                 "id": memory_id,
                 "namespace": namespace,
                 "status": upload_result.get("status", "unknown"),
                 "action": "updated",
-                "reason": "Memory updated successfully via delete-and-recreate",
+                "reason": "Memory updated successfully via overwrite",
                 "validation": validation_result.get("action", "validated"),
                 "updated_fields": list(updates.keys()),
             }
