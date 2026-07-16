@@ -987,15 +987,13 @@ def serve(
 
 def _open_dashboard_window(url: str) -> None:
     """Open ``url`` safely in the user's default browser.
-    
+
     Validates that the URL uses an HTTP/HTTPS scheme and avoids shell interpolation
     to prevent command injection.
     """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        console.print(
-            f"[{WARNING}]Refusing to open non-HTTP(S) URL:[/{WARNING}] {url}"
-        )
+        console.print(f"[{WARNING}]Refusing to open non-HTTP(S) URL:[/{WARNING}] {url}")
         return
 
     # On Windows, try to open Edge or Chrome in standalone app mode for a native feel.
@@ -1024,7 +1022,6 @@ def ui(
     port: int = typer.Option(None, "--port", help="Server port (defaults to config)"),
 ):
     """Start MEMANTO server and open the Web UI Dashboard."""
-    import webbrowser
 
     server_cfg = config_manager.get_server_config()
     host = host or server_cfg.get("url", "0.0.0.0")

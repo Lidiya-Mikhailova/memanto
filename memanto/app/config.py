@@ -11,10 +11,10 @@ from pathlib import Path
 
 import yaml  # type: ignore[import-untyped]
 from dotenv import load_dotenv
-
-logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 # Load project .env first, then ~/.memanto/.env for the API key
 load_dotenv()

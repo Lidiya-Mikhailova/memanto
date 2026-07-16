@@ -579,7 +579,11 @@ class MemoryReadService:
                     if expires_dt > now:
                         filtered.append(result)
                 elif isinstance(expires_at, datetime):
-                    tz_aware = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=timezone.utc)
+                    tz_aware = (
+                        expires_at
+                        if expires_at.tzinfo
+                        else expires_at.replace(tzinfo=timezone.utc)
+                    )
                     if tz_aware > now:
                         filtered.append(result)
                 # Any other type: fail closed - treat as expired and exclude.

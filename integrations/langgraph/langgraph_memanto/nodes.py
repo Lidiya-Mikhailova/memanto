@@ -57,7 +57,9 @@ class _PerAgentClientCache:
             return self._clients[agent_id]
 
 
-def _do_setup(agent_client: SdkClient, resolved_agent_id: str, agent_lock: threading.Lock) -> None:
+def _do_setup(
+    agent_client: SdkClient, resolved_agent_id: str, agent_lock: threading.Lock
+) -> None:
     """Ensure agent exists and activate a session on *agent_client*.
 
     Uses the caller-supplied per-agent client, not a shared one, so mutations

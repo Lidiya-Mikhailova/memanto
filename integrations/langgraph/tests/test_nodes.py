@@ -2,12 +2,13 @@ import threading
 from unittest.mock import MagicMock, patch
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from memanto.app.utils.errors import SessionError as MementoSessionError
 from langgraph_memanto.nodes import (
     _PerAgentClientCache,
     create_recall_node,
     create_remember_node,
 )
+
+from memanto.app.utils.errors import SessionError as MementoSessionError
 
 # All tests that use a MagicMock client need to patch the SdkClient constructor
 # inside nodes.py so that _PerAgentClientCache returns the original mock instead
@@ -232,8 +233,12 @@ def test_per_agent_client_cache_returns_distinct_clients():
         bob_client = cache.get("bob")
         alice_client_again = cache.get("alice")
 
-    assert alice_client is not bob_client, "Different agent_ids must get different clients"
-    assert alice_client is alice_client_again, "Same agent_id must always get the same client"
+    assert alice_client is not bob_client, (
+        "Different agent_ids must get different clients"
+    )
+    assert alice_client is alice_client_again, (
+        "Same agent_id must always get the same client"
+    )
 
 
 def test_concurrent_recall_nodes_do_not_share_session_state():
@@ -334,5 +339,9 @@ def test_remember_does_not_retry_on_generic_error():
         result = node(state)
 
     assert result == {"messages": []}
-    assert client.activate_agent.call_count == 0, "setup must NOT trigger on non-session error"
-    assert client.remember.call_count == 1, "remember must NOT be retried on non-session error"
+    assert client.activate_agent.call_count == 0, (
+        "setup must NOT trigger on non-session error"
+    )
+    assert client.remember.call_count == 1, (
+        "remember must NOT be retried on non-session error"
+    )

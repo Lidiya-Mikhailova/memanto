@@ -353,6 +353,7 @@ class MemoryWriteService:
 
             # Step 3: Upload new version (overwrites existing document with same ID)
             from typing import Any, cast
+
             from moorcheh_sdk.types.document import Document
 
             validation_result = {"action": "store", "reason": "MVP direct store"}

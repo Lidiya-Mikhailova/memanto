@@ -66,6 +66,7 @@ async def client():
 def auth_headers():
     """Return standard auth headers"""
     from memanto.app.config import settings
+
     return {"Authorization": f"Bearer {settings.MOORCHEH_API_KEY}"}
 
 
