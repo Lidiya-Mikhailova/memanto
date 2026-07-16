@@ -73,17 +73,29 @@ def _do_setup(
             try:
                 agent_client.get_session_info()
                 return
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "Ignoring get_session_info failure during setup for agent_id=%s: %s",
+                    resolved_agent_id,
+                    exc,
+                )
 
         try:
             agent_client.create_agent(agent_id=resolved_agent_id, pattern="tool")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "Ignoring create_agent failure during setup for agent_id=%s: %s",
+                resolved_agent_id,
+                exc,
+            )
         try:
             agent_client.activate_agent(resolved_agent_id, duration_hours=6)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "Ignoring activate_agent failure during setup for agent_id=%s: %s",
+                resolved_agent_id,
+                exc,
+            )
 
 
 def create_recall_node(
