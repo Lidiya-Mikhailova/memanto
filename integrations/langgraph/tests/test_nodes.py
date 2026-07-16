@@ -229,9 +229,9 @@ def test_per_agent_client_cache_returns_distinct_clients():
 
     with patch(_PATCH, side_effect=lambda api_key: next(mocks)):
         cache = _PerAgentClientCache(template)
-        alice_client = cache.get("alice")
-        bob_client = cache.get("bob")
-        alice_client_again = cache.get("alice")
+        alice_client, alice_lock = cache.get("alice")
+        bob_client, bob_lock = cache.get("bob")
+        alice_client_again, alice_lock_again = cache.get("alice")
 
     assert alice_client is not bob_client, (
         "Different agent_ids must get different clients"
