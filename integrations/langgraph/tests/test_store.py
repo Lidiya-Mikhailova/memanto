@@ -173,6 +173,8 @@ def test_do_put_success(mock_sdk_client):
     store = MemantoStore(api_key="test_key")
     client_instance = MagicMock()
     mock_sdk_client.return_value = client_instance
+    client_instance.recall_recent.return_value = {"memories": []}
+    client_instance.recall.return_value = {"memories": []}
 
     op = PutOp(
         namespace=("my_ns",),
@@ -213,6 +215,76 @@ def test_tags_to_key_unescapes_encoded_key_tags():
         "thread,checkpoint"
     )
 
+
+def test_do_put_updates_existing_key_instead_of_creating_duplicate(mock_sdk_client):
+    """LangGraph put is an upsert for a unique namespace/key pair."""
+    store = MemantoStore(api_key="test_key")
+    client_instance = MagicMock()
+    mock_sdk_client.return_value = client_instance
+    client_instance.recall_recent.return_value = {
+        "memories": [
+            {
+                "id": "mem-existing",
+                "tags": ["lg:key:my_key"],
+                "type": "fact",
+                "title": "old title",
+                "content": "old content",
+                "confidence": 0.8,
+            }
+        ]
+    }
+
+    op = PutOp(
+        namespace=("my_ns",),
+        key="my_key",
+        value={"kind": "fact", "content": "new content", "title": "new title"},
+    )
+    store._do_put(op)
+
+    client_instance.update_memory.assert_called_once_with(
+        agent_id="langgraph_my_ns",
+        memory_id="mem-existing",
+        updates={
+            "type": "fact",
+            "title": "new title",
+            "content": "new content",
+            "confidence": 0.8,
+            "tags": ["lg:key:my_key"],
+            "source": "langgraph-store",
+        },
+    )
+    client_instance.remember.assert_not_called()
+
+
+def test_do_put_existing_key_without_type_preserves_existing_type(mock_sdk_client):
+    """An inferred type must not be replaced with an invalid None update."""
+    store = MemantoStore(api_key="test_key")
+    client_instance = MagicMock()
+    mock_sdk_client.return_value = client_instance
+    client_instance.recall_recent.return_value = {
+        "memories": [
+            {
+                "id": "mem-existing",
+                "tags": ["lg:key:my_key"],
+                "type": "preference",
+                "title": "old title",
+                "content": "old content",
+                "confidence": 0.8,
+            }
+        ]
+    }
+
+    store._do_put(
+        PutOp(
+            namespace=("my_ns",),
+            key="my_key",
+            value={"content": "new content", "title": "new title"},
+        )
+    )
+
+    updates = client_instance.update_memory.call_args.kwargs["updates"]
+    assert "type" not in updates
+    client_instance.remember.assert_not_called()
 
 def test_do_put_delete_not_supported(mock_sdk_client):
     store = MemantoStore(api_key="test_key")
