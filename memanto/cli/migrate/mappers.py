@@ -35,7 +35,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
-from memanto.app.constants import VALID_MEMORY_TYPES
+from memanto.app.constants import VALID_MEMORY_TYPES, VALID_PROVENANCE_TYPES
 
 # Mem0 ships category labels per memory. Map the common ones to Memanto's
 # typed primitives; everything else falls through to None (auto-classify).
@@ -71,6 +71,13 @@ def _coerce_type(raw: str | None) -> str | None:
         return None
     t = raw.strip().lower()
     return t if t in VALID_MEMORY_TYPES else None
+
+
+def _coerce_provenance(raw: Any) -> str:
+    if not isinstance(raw, str):
+        return "imported"
+    provenance = raw.strip().lower()
+    return provenance if provenance in VALID_PROVENANCE_TYPES else "imported"
 
 
 def _scope_tag(scope: dict[str, Any] | None) -> str | None:
@@ -452,6 +459,7 @@ def map_okf(export: dict[str, Any]) -> list[dict[str, Any]]:
         confidence = min(1.0, max(0.0, confidence))
 
         source = x_memanto.get("source") or "okf"
+        provenance = _coerce_provenance(x_memanto.get("provenance"))
         created_at = _parse_dt(entry.get("timestamp"))
 
         footer_items: list[tuple[str, Any]] = [
@@ -479,7 +487,7 @@ def map_okf(export: dict[str, Any]) -> list[dict[str, Any]]:
                 "confidence": confidence,
                 "source": source,
                 "source_ref": str(resource) if resource else None,
-                "provenance": "imported",
+                "provenance": provenance,
                 "created_at": created_at,
                 "updated_at": migrated_at,
             }

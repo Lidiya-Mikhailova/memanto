@@ -96,8 +96,7 @@ def test_context_sections_and_import_scope(tmp_path):
 
 
 def test_memanto_round_trip_preserves_extras(tmp_path):
-    """Memanto -> OKF -> Memanto keeps type/confidence/source_ref/tags/body via
-    the ``x_memanto`` block, and always marks provenance as imported."""
+    """Memanto -> OKF -> Memanto keeps schema fields from ``x_memanto``."""
     memories_by_type = {
         "fact": [
             _mem(
@@ -126,11 +125,26 @@ def test_memanto_round_trip_preserves_extras(tmp_path):
     assert pg["type"] == "fact"  # x_memanto.type round-trips
     assert pg["confidence"] == 0.9  # x_memanto.confidence round-trips
     assert pg["source_ref"] == "https://example.com/db"  # resource -> source_ref
-    assert pg["provenance"] == "imported"
+    assert pg["provenance"] == "explicit_statement"
     assert set(pg["tags"]) == {"infra", "db"}
     assert pg["created_at"] is not None
     assert "PostgreSQL 16" in pg["content"]
     assert by_title["Chose Redis"]["type"] == "decision"
+
+
+def test_okf_invalid_provenance_falls_back_to_imported():
+    """Foreign or malformed provenance must not reach batch validation."""
+    export = {
+        "memories": [
+            {
+                "title": "Foreign memory",
+                "body": "Imported from another OKF producer.",
+                "x_memanto": {"provenance": "untrusted-value"},
+            }
+        ]
+    }
+
+    assert map_okf(export)[0]["provenance"] == "imported"
 
 
 def test_foreign_okf_bundle_is_lossless(tmp_path):
