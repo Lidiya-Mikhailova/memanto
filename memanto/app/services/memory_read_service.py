@@ -713,9 +713,11 @@ class MemoryReadService:
             lines = raw_text.split("\n\n", 2)  # Split into at most 3 parts
             first_line = lines[0] if lines else ""
 
-            # Extract title: strip the "[TYPE] " prefix from first line
-
-            title_match = re.match(r"^\[.*?\]\s*(.*)$", first_line)
+            # Extract title: strip the "[TYPE] " prefix from first line.
+            # DOTALL: documents stored before titles were normalized may
+            # still carry a raw newline inside the title block; the prefix
+            # must be stripped instead of leaking into the returned title.
+            title_match = re.match(r"^\[.*?\]\s*(.*)$", first_line, re.DOTALL)
             if title_match:
                 title = title_match.group(1).strip()
                 # Content is the rest after the first line (skip tags section)
