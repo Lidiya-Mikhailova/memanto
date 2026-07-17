@@ -47,18 +47,8 @@ __all__ = ["SdkClient"]
 _MAX_BATCH_SIZE = 100
 _MAX_TITLE_LENGTH = 100
 _MAX_CONTENT_LENGTH = InputLimits.MAX_TEXT_LENGTH
-_SUCCESSFUL_WRITE_STATUSES = {"queued", "success", "ok"}
 
-
-def _write_result_succeeded(item: object) -> bool:
-    return (
-        isinstance(item, dict)
-        and str(item.get("status", "")).lower() in _SUCCESSFUL_WRITE_STATUSES
-    )
-
-
-def _batch_result_succeeded(item: object) -> bool:
-    return _write_result_succeeded(item)
+from memanto.app.utils.validation import is_successful_write_result
 
 
 class SdkClient:
@@ -478,7 +468,7 @@ class SdkClient:
         result = self._get_write_service().store_memory(memory)
 
         # Log to local session Markdown summary only after a durable write.
-        if self.session_token and _write_result_succeeded(result):
+        if self.session_token and is_successful_write_result(result):
             session_id = "unknown"
             self._get_session_service().log_memory_to_session_summary(
                 agent_id=agent_id,
@@ -587,7 +577,7 @@ class SdkClient:
 
             for i, mem in enumerate(memory_records):
                 item_result = batch_results[i] if i < len(batch_results) else None
-                if not _batch_result_succeeded(item_result):
+                if not is_successful_write_result(item_result):
                     continue
                 mem_id = item_result.get("id")
                 session_svc.log_memory_to_session_summary(
