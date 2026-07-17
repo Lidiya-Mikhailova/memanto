@@ -475,8 +475,10 @@ class MemoryReadService:
 
         # Combine query with filters
         if filter_parts:
-            return f"{query} {' '.join(filter_parts)}"
-        return query
+            base = (query or "").strip()
+            joined = " ".join(filter_parts)
+            return f"{base} {joined}".strip() if base else joined
+        return (query or "").strip()
 
     def _apply_temporal_filter(
         self,
