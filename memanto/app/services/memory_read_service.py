@@ -115,7 +115,9 @@ class MemoryReadService:
             # Build query parameters
             # Request extra results to handle offset (Moorcheh doesn't have native offset support)
             requested_limit = limit + offset
-            top_k = min(requested_limit, 100)  # Moorcheh max is 100
+            if requested_limit > 100:
+                raise ValueError("limit + offset cannot exceed Moorcheh's maximum result cap of 100.")
+            top_k = requested_limit
 
             # Perform search with server-side filtering.
             # Only enable kiosk_mode when the caller actually set a positive
