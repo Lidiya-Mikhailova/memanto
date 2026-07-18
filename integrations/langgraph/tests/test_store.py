@@ -286,6 +286,65 @@ def test_do_put_existing_key_without_type_preserves_existing_type(mock_sdk_clien
     assert "type" not in updates
     client_instance.remember.assert_not_called()
 
+def test_public_put_replaces_value_without_growing_backend_memory(mock_sdk_client):
+    """Repeated public ``put`` calls keep one backend record with the latest value."""
+    store = MemantoStore(api_key="test_key")
+    client_instance = MagicMock()
+    mock_sdk_client.return_value = client_instance
+    memories: list[dict] = []
+
+    def recall_recent(**_kwargs):
+        return {"memories": [memory.copy() for memory in memories]}
+
+    def recall(**_kwargs):
+        return {"memories": [memory.copy() for memory in memories]}
+
+    def remember(**kwargs):
+        memories.append(
+            {
+                "id": "mem-1",
+                "type": kwargs["memory_type"],
+                "title": kwargs["title"],
+                "content": kwargs["content"],
+                "confidence": kwargs["confidence"],
+                "tags": list(kwargs["tags"]),
+                "source": kwargs["source"],
+            }
+        )
+        return {"memory_id": "mem-1"}
+
+    def update_memory(*, memory_id, updates, **_kwargs):
+        memory = next(memory for memory in memories if memory["id"] == memory_id)
+        memory.update(updates)
+        return {"memory_id": memory_id}
+
+    client_instance.recall_recent.side_effect = recall_recent
+    client_instance.recall.side_effect = recall
+    client_instance.remember.side_effect = remember
+    client_instance.update_memory.side_effect = update_memory
+
+    namespace = ("users",)
+    key = "user-42"
+    store.put(
+        namespace,
+        key,
+        {"kind": "preference", "content": "Prefers email"},
+    )
+    store.put(
+        namespace,
+        key,
+        {"kind": "preference", "content": "Prefers Telegram"},
+    )
+
+    item = store.get(namespace, key)
+
+    assert len(memories) == 1
+    assert item is not None
+    assert item.value["content"] == "Prefers Telegram"
+    assert client_instance.remember.call_count == 1
+    assert client_instance.update_memory.call_count == 1
+
+
 def test_do_put_delete_not_supported(mock_sdk_client):
     store = MemantoStore(api_key="test_key")
     op = PutOp(namespace=("my_ns",), key="my_key", value=None)
