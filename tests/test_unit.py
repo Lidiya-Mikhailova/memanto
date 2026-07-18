@@ -468,7 +468,7 @@ class TestMemoryWriteServiceDelete:
         assert "validation_count" not in uploaded
 
 
-class TestMemoryWriteServiceUpdate:
+class TestMemoryWriteServiceUpdateIntegrity:
     def test_update_memory_preserves_read_service_metadata(self):
         from memanto.app.services.memory_write_service import MemoryWriteService
 
