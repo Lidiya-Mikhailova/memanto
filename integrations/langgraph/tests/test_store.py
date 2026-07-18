@@ -1,3 +1,5 @@
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -286,6 +288,27 @@ def test_do_put_existing_key_without_type_preserves_existing_type(mock_sdk_clien
     assert "type" not in updates
     client_instance.remember.assert_not_called()
 
+def test_do_put_does_not_create_when_existence_lookup_fails(mock_sdk_client):
+    """A failed fallback lookup must not be mistaken for an absent key."""
+    store = MemantoStore(api_key="test_key")
+    client_instance = MagicMock()
+    mock_sdk_client.return_value = client_instance
+    client_instance.recall_recent.return_value = {"memories": []}
+    client_instance.recall.side_effect = RuntimeError("backend unavailable")
+
+    with pytest.raises(RuntimeError, match="Cannot safely determine"):
+        store._do_put(
+            PutOp(
+                namespace=("my_ns",),
+                key="my_key",
+                value={"content": "must not be duplicated"},
+            )
+        )
+
+    client_instance.remember.assert_not_called()
+    client_instance.update_memory.assert_not_called()
+
+
 def test_public_put_replaces_value_without_growing_backend_memory(mock_sdk_client):
     """Repeated public ``put`` calls keep one backend record with the latest value."""
     store = MemantoStore(api_key="test_key")
@@ -341,6 +364,65 @@ def test_public_put_replaces_value_without_growing_backend_memory(mock_sdk_clien
     assert len(memories) == 1
     assert item is not None
     assert item.value["content"] == "Prefers Telegram"
+    assert client_instance.remember.call_count == 1
+    assert client_instance.update_memory.call_count == 1
+
+
+def test_concurrent_public_puts_for_same_key_are_serialized(mock_sdk_client):
+    """Concurrent puts in one store instance cannot both create the same key."""
+    store = MemantoStore(api_key="test_key")
+    client_instance = MagicMock()
+    mock_sdk_client.return_value = client_instance
+    memories: list[dict] = []
+    backend_lock = threading.Lock()
+    first_remember_started = threading.Event()
+    allow_first_remember = threading.Event()
+
+    def recall_recent(**_kwargs):
+        with backend_lock:
+            return {"memories": [memory.copy() for memory in memories]}
+
+    def recall(**_kwargs):
+        return {"memories": []}
+
+    def remember(**kwargs):
+        first_remember_started.set()
+        assert allow_first_remember.wait(timeout=2)
+        with backend_lock:
+            memories.append(
+                {
+                    "id": f"mem-{len(memories) + 1}",
+                    "type": kwargs["memory_type"],
+                    "title": kwargs["title"],
+                    "content": kwargs["content"],
+                    "confidence": kwargs["confidence"],
+                    "tags": list(kwargs["tags"]),
+                    "source": kwargs["source"],
+                }
+            )
+
+    def update_memory(*, memory_id, updates, **_kwargs):
+        with backend_lock:
+            memory = next(memory for memory in memories if memory["id"] == memory_id)
+            memory.update(updates)
+
+    client_instance.recall_recent.side_effect = recall_recent
+    client_instance.recall.side_effect = recall
+    client_instance.remember.side_effect = remember
+    client_instance.update_memory.side_effect = update_memory
+
+    namespace = ("users",)
+    key = "user-42"
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(store.put, namespace, key, {"content": "first value"})
+        assert first_remember_started.wait(timeout=2)
+        second = executor.submit(store.put, namespace, key, {"content": "second value"})
+        allow_first_remember.set()
+        first.result(timeout=2)
+        second.result(timeout=2)
+
+    assert len(memories) == 1
+    assert memories[0]["content"] == "second value"
     assert client_instance.remember.call_count == 1
     assert client_instance.update_memory.call_count == 1
 
