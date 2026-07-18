@@ -288,6 +288,7 @@ def test_do_put_existing_key_without_type_preserves_existing_type(mock_sdk_clien
     assert "type" not in updates
     client_instance.remember.assert_not_called()
 
+
 def test_do_put_does_not_create_when_existence_lookup_fails(mock_sdk_client):
     """A failed fallback lookup must not be mistaken for an absent key."""
     store = MemantoStore(api_key="test_key")
@@ -377,6 +378,9 @@ def test_concurrent_public_puts_for_same_key_are_serialized(mock_sdk_client):
     backend_lock = threading.Lock()
     first_remember_started = threading.Event()
     allow_first_remember = threading.Event()
+    second_put_entered = threading.Event()
+    put_entry_lock = threading.Lock()
+    put_entry_count = 0
 
     def recall_recent(**_kwargs):
         with backend_lock:
@@ -411,12 +415,26 @@ def test_concurrent_public_puts_for_same_key_are_serialized(mock_sdk_client):
     client_instance.remember.side_effect = remember
     client_instance.update_memory.side_effect = update_memory
 
+    original_do_put = store._do_put
+
+    def tracked_do_put(op):
+        nonlocal put_entry_count
+        with put_entry_lock:
+            put_entry_count += 1
+            if put_entry_count == 2:
+                second_put_entered.set()
+        return original_do_put(op)
+
     namespace = ("users",)
     key = "user-42"
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with (
+        patch.object(store, "_do_put", side_effect=tracked_do_put),
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
         first = executor.submit(store.put, namespace, key, {"content": "first value"})
         assert first_remember_started.wait(timeout=2)
         second = executor.submit(store.put, namespace, key, {"content": "second value"})
+        assert second_put_entered.wait(timeout=2)
         allow_first_remember.set()
         first.result(timeout=2)
         second.result(timeout=2)
