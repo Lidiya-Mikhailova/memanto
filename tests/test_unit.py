@@ -510,6 +510,24 @@ class TestMemoryReadServiceFormatting:
         assert formatted["confidence"] == 0.0
         assert formatted["tags"] == []
 
+    def test_embedded_tags_paragraph_with_real_tags(self):
+        from memanto.app.services.memory_read_service import MemoryReadService
+        from unittest.mock import MagicMock
+
+        # Content whose first paragraph starts with "Tags: " AND a genuine trailing
+        # tags block: only the LAST block is metadata, so rpartition (not any match)
+        # must be used. This is the case the fix hinges on.
+        item = {
+            "text": "[FACT] T\n\nTags: this is user content, not metadata\n\nTags: urgent",
+            "memory_type": "fact",
+            "tags": "urgent",
+        }
+        
+        formatted = MemoryReadService(MagicMock())._format_memory_item(item)
+        
+        assert formatted["content"] == "Tags: this is user content, not metadata"
+        assert formatted["tags"] == ["urgent"]
+
 
 class TestMemoryWriteServiceBatch:
     def test_batch_store_counts_ok_upload_status_as_success(self):
@@ -602,6 +620,27 @@ class TestMemoryWriteServiceUpdate:
         uploaded_doc = client.documents.upload.call_args.kwargs["documents"][0]
         assert uploaded_doc["expires_at"] == "2099-01-02T00:00:00+00:00"
         assert uploaded_doc["ttl_seconds"] == 3600
+
+
+class TestMemoryReadServiceTemporalFilters:
+    def test_one_bad_timestamp_does_not_disable_window(self):
+        from memanto.app.services.memory_read_service import MemoryReadService
+        from unittest.mock import MagicMock
+
+        results = [
+            {"id": "old", "created_at": "2020-01-01T00:00:00Z"},
+            {"id": "bad", "created_at": "not-a-timestamp"},
+            {"id": "june", "created_at": "2026-06-15T00:00:00Z"},
+        ]
+        
+        service = MemoryReadService(moorcheh_client=MagicMock())
+        out = service._apply_temporal_filter(
+            results, created_after="2026-06-01T00:00:00Z", created_before=None
+        )
+        
+        # Only the in-window record survives; the 2020 record must NOT leak through,
+        # and the unparseable record is skipped individually.
+        assert [r["id"] for r in out] == ["june"]
 
 
 class TestMemoryReadServiceChangedSince:
