@@ -11,6 +11,7 @@ import logging
 import os
 import secrets
 import tempfile
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -81,6 +82,13 @@ class SessionService:
             or self._generate_secure_secret_key()
         )
         self.secret_key: str = resolved_secret_key
+        self._auto_renew_locks: dict[str, threading.RLock] = {}
+        self._auto_renew_locks_guard = threading.Lock()
+
+    def _get_auto_renew_lock(self, agent_id: str) -> threading.RLock:
+        """Return the per-agent lock that serializes token rotation."""
+        with self._auto_renew_locks_guard:
+            return self._auto_renew_locks.setdefault(agent_id, threading.RLock())
 
     @staticmethod
     def _set_private_permissions(path: Path, mode: int) -> None:
@@ -488,19 +496,24 @@ class SessionService:
         if not settings.SESSION_AUTO_RENEW_ENABLED:
             return None
 
-        session = self.get_session(agent_id)
-        if not session or not session.is_active():
-            return None
+        # Validation and renewal must be one operation. Without a per-agent
+        # single-flight lock, parallel requests can all observe the same
+        # near-expiry session, mint competing tokens, and immediately
+        # invalidate every replacement except the last file write.
+        with self._get_auto_renew_lock(agent_id):
+            session = self.get_session(agent_id)
+            if not session or not session.is_active():
+                return None
 
-        remaining = session.time_remaining()
-        threshold = timedelta(minutes=settings.SESSION_EXTEND_THRESHOLD_MINUTES)
+            remaining = session.time_remaining()
+            threshold = timedelta(minutes=settings.SESSION_EXTEND_THRESHOLD_MINUTES)
 
-        if remaining <= threshold:
-            # Renew with a fresh session
-            return self.renew_session(
-                agent_id=agent_id,
-                pattern=session.pattern,
-            )
+            if remaining <= threshold:
+                # Renew with a fresh session
+                return self.renew_session(
+                    agent_id=agent_id,
+                    pattern=session.pattern,
+                )
 
         return None
 
