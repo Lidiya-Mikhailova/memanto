@@ -39,12 +39,14 @@ from memanto.app.utils.errors import (
     SessionExpiredError,
     SessionNotFoundError,
 )
-from memanto.app.utils.validation import InputLimits, validate_recall_limit
+from memanto.app.utils.validation import (
+    InputLimits,
+    is_successful_write_result,
+    validate_recall_limit,
+)
 from memanto.cli.config.manager import ConfigManager
 
 logger = logging.getLogger(__name__)
-
-from memanto.app.utils.validation import is_successful_write_result
 
 
 # Moorcheh's API Gateway strictly requires lowercase for 'x-api-key'.

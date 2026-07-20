@@ -36,7 +36,11 @@ from memanto.app.utils.errors import (
     SessionExpiredError,
     SessionNotFoundError,
 )
-from memanto.app.utils.validation import InputLimits, validate_recall_limit
+from memanto.app.utils.validation import (
+    InputLimits,
+    is_successful_write_result,
+    validate_recall_limit,
+)
 from memanto.cli.config.manager import ConfigManager
 
 logger = logging.getLogger(__name__)
@@ -47,8 +51,6 @@ __all__ = ["SdkClient"]
 _MAX_BATCH_SIZE = 100
 _MAX_TITLE_LENGTH = 100
 _MAX_CONTENT_LENGTH = InputLimits.MAX_TEXT_LENGTH
-
-from memanto.app.utils.validation import is_successful_write_result
 
 
 class SdkClient:
@@ -600,7 +602,7 @@ class SdkClient:
                 item_result = batch_results[i] if i < len(batch_results) else None
                 if not is_successful_write_result(item_result):
                     continue
-                mem_id = item_result.get("id")
+                mem_id = item_result.get("id") if isinstance(item_result, dict) else None
                 session_svc.log_memory_to_session_summary(
                     agent_id=agent_id,
                     session_id=session_id,

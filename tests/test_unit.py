@@ -806,8 +806,8 @@ class TestMemoryWriteServiceTimestamps:
         service.batch_store_memories([memory])
 
         uploaded = client.documents.upload.call_args.kwargs["documents"][0]
-        assert uploaded["created_at"] == "2020-01-02T03:04:05"
-        assert memory.created_at.tzinfo is None
+        assert uploaded["created_at"] == "2020-01-02T03:04:05+00:00"
+        assert memory.created_at.tzinfo is not None
 
     def test_batch_store_overrides_non_imported_created_at(self):
         from memanto.app.core import MemoryRecord
@@ -833,7 +833,7 @@ class TestMemoryWriteServiceTimestamps:
         after_store = datetime.now(timezone.utc)
 
         uploaded = client.documents.upload.call_args.kwargs["documents"][0]
-        assert not uploaded["created_at"].startswith("2020-01-02T03:04:05")
+        assert not uploaded["created_at"].startswith("2020-01-02T03:04:05+00:00")
         parsed_created_at = datetime.fromisoformat(uploaded["created_at"])
         assert before_store <= parsed_created_at <= after_store
 

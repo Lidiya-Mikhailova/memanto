@@ -41,7 +41,11 @@ from memanto.app.services.conversation_memory_extraction_service import (
 from memanto.app.services.memory_read_service import MemoryReadService
 from memanto.app.services.memory_write_service import MemoryWriteService
 from memanto.app.utils.errors import AuthorizationError, map_error_to_http_exception
-from memanto.app.utils.validation import CostGuard, validate_safe_id
+from memanto.app.utils.validation import (
+    CostGuard,
+    is_successful_write_result,
+    validate_safe_id,
+)
 from memanto.cli.client.direct_client import DirectClient
 from memanto.cli.config.manager import ConfigManager
 
@@ -76,9 +80,6 @@ def _validate_memory_type_filters(value: list[str] | None) -> list[str] | None:
             f"Must be one of: {valid_types}."
         )
     return value
-
-
-from memanto.app.utils.validation import is_successful_write_result
 
 
 class RecallRequest(BaseModel):
