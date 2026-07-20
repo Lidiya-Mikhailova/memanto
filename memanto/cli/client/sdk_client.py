@@ -602,7 +602,9 @@ class SdkClient:
                 item_result = batch_results[i] if i < len(batch_results) else None
                 if not is_successful_write_result(item_result):
                     continue
-                mem_id = item_result.get("id") if isinstance(item_result, dict) else None
+                mem_id = (
+                    item_result.get("id") if isinstance(item_result, dict) else None
+                )
                 session_svc.log_memory_to_session_summary(
                     agent_id=agent_id,
                     session_id=session_id,

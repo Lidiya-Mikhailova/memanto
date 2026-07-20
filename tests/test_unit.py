@@ -511,8 +511,9 @@ class TestMemoryReadServiceFormatting:
         assert formatted["tags"] == []
 
     def test_embedded_tags_paragraph_with_real_tags(self):
-        from memanto.app.services.memory_read_service import MemoryReadService
         from unittest.mock import MagicMock
+
+        from memanto.app.services.memory_read_service import MemoryReadService
 
         # Content whose first paragraph starts with "Tags: " AND a genuine trailing
         # tags block: only the LAST block is metadata, so rpartition (not any match)
@@ -522,9 +523,9 @@ class TestMemoryReadServiceFormatting:
             "memory_type": "fact",
             "tags": "urgent",
         }
-        
+
         formatted = MemoryReadService(MagicMock())._format_memory_item(item)
-        
+
         assert formatted["content"] == "Tags: this is user content, not metadata"
         assert formatted["tags"] == ["urgent"]
 
@@ -582,7 +583,6 @@ class TestMemoryWriteServiceBatch:
         assert result["results"][0]["status"] == "failed"
 
 
-
 class TestMemoryWriteServiceUpdate:
     def test_update_memory_preserves_string_expires_at(self):
         """Updating a TTL-backed memory should not fail when the stored
@@ -624,20 +624,21 @@ class TestMemoryWriteServiceUpdate:
 
 class TestMemoryReadServiceTemporalFilters:
     def test_one_bad_timestamp_does_not_disable_window(self):
-        from memanto.app.services.memory_read_service import MemoryReadService
         from unittest.mock import MagicMock
+
+        from memanto.app.services.memory_read_service import MemoryReadService
 
         results = [
             {"id": "old", "created_at": "2020-01-01T00:00:00Z"},
             {"id": "bad", "created_at": "not-a-timestamp"},
             {"id": "june", "created_at": "2026-06-15T00:00:00Z"},
         ]
-        
+
         service = MemoryReadService(moorcheh_client=MagicMock())
         out = service._apply_temporal_filter(
             results, created_after="2026-06-01T00:00:00Z", created_before=None
         )
-        
+
         # Only the in-window record survives; the 2020 record must NOT leak through,
         # and the unparseable record is skipped individually.
         assert [r["id"] for r in out] == ["june"]
@@ -816,7 +817,6 @@ class TestForgetEndToEnd:
         result = client.delete_memory(agent_id="test-agent", memory_id="mem-xyz")
         assert result["status"] == "deleted"
         assert result["memory_id"] == "mem-xyz"
-
 
 
 class TestMemoryWriteServiceTimestamps:
@@ -1128,36 +1128,43 @@ class TestValidateSafeId:
             svc.generate_conflict_report("agent1", "../../etc/passwd")
 
         assert not (tmp_path / "etc").exists()
+
+
 def test_format_memory_item_tag_stripping():
-    from memanto.app.services.memory_read_service import MemoryReadService
     from unittest.mock import MagicMock
-    
+
+    from memanto.app.services.memory_read_service import MemoryReadService
+
     service = MemoryReadService(moorcheh_client=MagicMock())
-    raw_text = '[FACT] Market Size\n\nParagraph 1\n\nParagraph 2\n\nTags: market, finance'
-    mock_item = {'text': raw_text, 'metadata': {'tags': 'market, finance'}}
-    
+    raw_text = (
+        "[FACT] Market Size\n\nParagraph 1\n\nParagraph 2\n\nTags: market, finance"
+    )
+    mock_item = {"text": raw_text, "metadata": {"tags": "market, finance"}}
+
     formatted = service._format_memory_item(mock_item)
-    
-    assert formatted.get('title') == 'Market Size'
-    assert 'Tags:' not in formatted.get('content', '')
-    assert 'Paragraph 1' in formatted.get('content', '')
-    assert 'Paragraph 2' in formatted.get('content', '')
+
+    assert formatted.get("title") == "Market Size"
+    assert "Tags:" not in formatted.get("content", "")
+    assert "Paragraph 1" in formatted.get("content", "")
+    assert "Paragraph 2" in formatted.get("content", "")
+
 
 def test_to_moorcheh_document_handles_string_expires_at():
     from memanto.app.core import MemoryRecord
-    
+
     memory = MemoryRecord(
-        type='fact',
-        title='String Expiry',
-        content='Expires at is a string',
-        agent_id='test-agent',
-        actor_id='user',
-        source='test',
+        type="fact",
+        title="String Expiry",
+        content="Expires at is a string",
+        agent_id="test-agent",
+        actor_id="user",
+        source="test",
     )
-    memory.expires_at = '2026-07-10T00:00:00'
+    memory.expires_at = "2026-07-10T00:00:00"
 
     doc = memory.to_moorcheh_document()
-    assert doc['expires_at'] == '2026-07-10T00:00:00'
+    assert doc["expires_at"] == "2026-07-10T00:00:00"
+
 
 def test_batch_upload_error_counts_each_pending_memory_as_failed():
     from memanto.app.core import MemoryRecord
@@ -1191,7 +1198,5 @@ def test_batch_upload_error_counts_each_pending_memory_as_failed():
     assert result["failed"] == 2
     assert [item["status"] for item in result["results"]] == ["failed", "failed"]
     assert all(
-        "Batch upload returned status" in item["error"]
-        for item in result["results"]
+        "Batch upload returned status" in item["error"] for item in result["results"]
     )
-

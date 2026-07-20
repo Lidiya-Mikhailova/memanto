@@ -58,13 +58,13 @@ class MemoryWriteService:
         if memory.provenance == "imported":
             memory.created_at = as_utc_aware(memory.created_at)
             memory.updated_at = as_utc_aware(memory.updated_at)
-            
+
             # Clamp to current time if in the future
             if memory.created_at > now:
                 memory.created_at = now
             if memory.updated_at > now:
                 memory.updated_at = now
-                
+
             # Enforce created_at <= updated_at invariant
             if memory.created_at > memory.updated_at:
                 memory.created_at = memory.updated_at

@@ -229,6 +229,7 @@ def validate_output_path(
         )
     return resolved
 
+
 _SUCCESSFUL_WRITE_STATUSES = {"queued", "success", "ok"}
 
 
