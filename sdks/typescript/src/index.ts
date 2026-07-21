@@ -382,12 +382,20 @@ export class Memanto {
   private async ensureReady(): Promise<void> {
     if (this.sessionToken) return;
     if (!this.starting) this.starting = this.bootstrap();
+    const starting = this.starting;
     try {
-      await this.starting;
-    } catch (e) {
-      this.starting = null;
-      throw e;
+      await starting;
+    } finally {
+      if (this.starting === starting) this.starting = null;
     }
+  }
+
+  private async refreshExpiredSession(staleToken: string | null): Promise<void> {
+    // Another request may already have refreshed the shared client while this
+    // request was waiting for its 401 response.
+    if (this.sessionToken && this.sessionToken !== staleToken) return;
+    this.sessionToken = null;
+    await this.ensureReady();
   }
 
   private async bootstrap(): Promise<void> {
@@ -442,11 +450,16 @@ export class Memanto {
     if (requireSession) {
       headers["X-Session-Token"] = this.sessionToken ?? "";
     }
-    const res = await fetch(`${baseUrl}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    const serializedBody = body === undefined ? undefined : JSON.stringify(body);
+    const send = () =>
+      fetch(`${baseUrl}${path}`, { method, headers, body: serializedBody });
+    const staleToken = this.sessionToken;
+    let res = await send();
+    if (requireSession && res.status === 401) {
+      await this.refreshExpiredSession(staleToken);
+      headers["X-Session-Token"] = this.sessionToken ?? "";
+      res = await send();
+    }
     if (!res.ok) throw await asError(res, `${method} ${path} failed`);
     if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
@@ -463,32 +476,44 @@ export class Memanto {
     if (!fileStats.isFile()) {
       throw new Error(`Upload path is not a file: ${filePath}`);
     }
-    const boundary = `----memanto-${randomUUID()}`;
-    const header = Buffer.from(
-      `--${boundary}\r\n` +
-        `Content-Disposition: form-data; name="file"; filename="${escapeMultipartValue(filename)}"\r\n` +
-        "Content-Type: application/octet-stream\r\n\r\n",
-    );
-    const footer = Buffer.from(`\r\n--${boundary}--\r\n`);
-    const body = Readable.from(
-      (async function* streamMultipart() {
-        yield header;
-        for await (const chunk of createReadStream(filePath)) {
-          yield chunk;
-        }
-        yield footer;
-      })(),
-    );
-    const res = await fetch(`${baseUrl}${path}`, {
-      method: "POST",
-      headers: {
-        "X-Session-Token": this.sessionToken ?? "",
-        "Content-Type": `multipart/form-data; boundary=${boundary}`,
-        "Content-Length": String(header.length + fileStats.size + footer.length),
-      },
-      body: body as unknown as BodyInit,
-      duplex: "half",
-    } as RequestInit & { duplex: "half" });
+    const headers: Record<string, string> = {
+      "X-Session-Token": this.sessionToken ?? "",
+    };
+    const send = () => {
+      const boundary = `----memanto-${randomUUID()}`;
+      const header = Buffer.from(
+        `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="file"; filename="${escapeMultipartValue(filename)}"\r\n` +
+          "Content-Type: application/octet-stream\r\n\r\n",
+      );
+      const footer = Buffer.from(`\r\n--${boundary}--\r\n`);
+      const body = Readable.from(
+        (async function* streamMultipart() {
+          yield header;
+          for await (const chunk of createReadStream(filePath)) {
+            yield chunk;
+          }
+          yield footer;
+        })(),
+      );
+      headers["Content-Type"] = `multipart/form-data; boundary=${boundary}`;
+      headers["Content-Length"] = String(
+        header.length + fileStats.size + footer.length,
+      );
+      return fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers,
+        body: body as unknown as BodyInit,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" });
+    };
+    const staleToken = this.sessionToken;
+    let res = await send();
+    if (res.status === 401) {
+      await this.refreshExpiredSession(staleToken);
+      headers["X-Session-Token"] = this.sessionToken ?? "";
+      res = await send();
+    }
     if (!res.ok) throw await asError(res, `POST ${path} failed`);
     return (await res.json()) as T;
   }

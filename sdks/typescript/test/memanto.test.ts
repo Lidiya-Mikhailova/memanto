@@ -13,7 +13,10 @@ interface Recorded {
   body: string;
 }
 
-function startFakeApi(agentId = "test-agent"): Promise<{
+function startFakeApi(
+  agentId = "test-agent",
+  opts: { expireFirstSession?: boolean } = {},
+): Promise<{
   url: string;
   recorded: Recorded[];
   close: () => void;
@@ -21,6 +24,7 @@ function startFakeApi(agentId = "test-agent"): Promise<{
   const encodedAgentId = encodeURIComponent(agentId);
   return new Promise((resolve) => {
     const recorded: Recorded[] = [];
+    let activationCount = 0;
     const srv: Server = createServer((req, res) => {
       collectBody(req).then((body) => {
         recorded.push({
@@ -48,9 +52,11 @@ function startFakeApi(agentId = "test-agent"): Promise<{
             pattern: "default",
             time_remaining_seconds: 3600,
           });
-        if (url.startsWith(`/api/v2/agents/${encodedAgentId}/activate`))
+        if (url.startsWith(`/api/v2/agents/${encodedAgentId}/activate`)) {
+          activationCount += 1;
           return reply(200, {
-            session_token: "fake-token",
+            session_token:
+              activationCount === 1 ? "fake-token" : "refreshed-token",
             agent_id: agentId,
             session_id: "sess-1",
             namespace: "memanto_agent_test_agent",
@@ -59,12 +65,20 @@ function startFakeApi(agentId = "test-agent"): Promise<{
             status: "active",
             pattern: "default",
           });
+        }
         if (url === `/api/v2/agents/${encodedAgentId}` && req.method === "GET")
           return reply(404, { detail: "not found" });
         if (url === "/api/v2/agents" && req.method === "POST")
           return reply(201, { agent_id: agentId });
         if (url === `/api/v2/agents/${encodedAgentId}` && req.method === "DELETE")
           return reply(200, { agent_id: agentId, deleted: true });
+        if (
+          opts.expireFirstSession &&
+          url === `/api/v2/agents/${encodedAgentId}/remember` &&
+          req.headers["x-session-token"] === "fake-token"
+        ) {
+          return reply(401, { detail: "Session token expired" });
+        }
         if (url === `/api/v2/agents/${encodedAgentId}/remember`)
           return reply(200, {
             memory_id: "mem-1",
@@ -149,6 +163,49 @@ describe("Memanto", () => {
 
     const res = await m.recall({ query: "coffee" });
     expect(res).toMatchObject({ count: 0 });
+  });
+
+  it("reactivates once and retries when the cached session expires", async () => {
+    const api = await startFakeApi("test-agent", { expireFirstSession: true });
+    cleanupFns.push(api.close);
+
+    const m = new Memanto({ agentId: "test-agent", baseUrl: api.url });
+    cleanupFns.push(() => m.close());
+
+    const res = await m.remember({ content: "Het likes coffee" });
+
+    expect(res).toMatchObject({ memory_id: "mem-1", status: "queued" });
+    const activations = api.recorded.filter((r) => r.url.endsWith("/activate"));
+    const remembers = api.recorded.filter((r) => r.url.endsWith("/remember"));
+    expect(activations).toHaveLength(2);
+    expect(remembers).toHaveLength(2);
+    expect(remembers[0]?.headers["x-session-token"]).toBe("fake-token");
+    expect(remembers[1]?.headers["x-session-token"]).toBe("refreshed-token");
+  });
+
+  it("shares one reactivation across concurrent expired-session retries", async () => {
+    const api = await startFakeApi("test-agent", { expireFirstSession: true });
+    cleanupFns.push(api.close);
+
+    const m = new Memanto({ agentId: "test-agent", baseUrl: api.url });
+    cleanupFns.push(() => m.close());
+
+    const results = await Promise.all([
+      m.remember({ content: "Het likes coffee" }),
+      m.remember({ content: "Het likes tea" }),
+    ]);
+
+    expect(results).toHaveLength(2);
+    const activations = api.recorded.filter((r) => r.url.endsWith("/activate"));
+    const remembers = api.recorded.filter((r) => r.url.endsWith("/remember"));
+    expect(activations).toHaveLength(2);
+    expect(remembers.filter((r) => r.headers["x-session-token"] === "fake-token"))
+      .toHaveLength(2);
+    expect(
+      remembers.filter(
+        (r) => r.headers["x-session-token"] === "refreshed-token",
+      ),
+    ).toHaveLength(2);
   });
 
   it("rebootstraps after deleting the active agent", async () => {
