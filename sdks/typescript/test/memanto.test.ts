@@ -15,7 +15,11 @@ interface Recorded {
 
 function startFakeApi(
   agentId = "test-agent",
-  opts: { expireFirstSession?: boolean; rejectAllSessions?: boolean } = {},
+  opts: {
+    expireFirstSession?: boolean;
+    rejectAllSessions?: boolean;
+    coordinateConcurrentExpiration?: boolean;
+  } = {},
 ): Promise<{
   url: string;
   recorded: Recorded[];
@@ -25,6 +29,8 @@ function startFakeApi(
   return new Promise((resolve) => {
     const recorded: Recorded[] = [];
     let activationCount = 0;
+    let expiredRememberCount = 0;
+    let pendingRefreshReply: (() => void) | null = null;
     const srv: Server = createServer((req, res) => {
       collectBody(req).then((body) => {
         recorded.push({
@@ -54,17 +60,27 @@ function startFakeApi(
           });
         if (url.startsWith(`/api/v2/agents/${encodedAgentId}/activate`)) {
           activationCount += 1;
-          return reply(200, {
-            session_token:
-              activationCount === 1 ? "fake-token" : "refreshed-token",
-            agent_id: agentId,
-            session_id: "sess-1",
-            namespace: "memanto_agent_test_agent",
-            started_at: new Date().toISOString(),
-            expires_at: new Date(Date.now() + 3600_000).toISOString(),
-            status: "active",
-            pattern: "default",
-          });
+          const sendActivation = () =>
+            reply(200, {
+              session_token:
+                activationCount === 1 ? "fake-token" : "refreshed-token",
+              agent_id: agentId,
+              session_id: "sess-1",
+              namespace: "memanto_agent_test_agent",
+              started_at: new Date().toISOString(),
+              expires_at: new Date(Date.now() + 3600_000).toISOString(),
+              status: "active",
+              pattern: "default",
+            });
+          if (
+            opts.coordinateConcurrentExpiration &&
+            activationCount === 2 &&
+            expiredRememberCount < 2
+          ) {
+            pendingRefreshReply = sendActivation;
+            return;
+          }
+          return sendActivation();
         }
         if (url === `/api/v2/agents/${encodedAgentId}` && req.method === "GET")
           return reply(404, { detail: "not found" });
@@ -78,7 +94,14 @@ function startFakeApi(
           (opts.rejectAllSessions ||
             req.headers["x-session-token"] === "fake-token")
         ) {
-          return reply(401, { detail: "Session token expired" });
+          expiredRememberCount += 1;
+          reply(401, { detail: "Session token expired" });
+          if (expiredRememberCount === 2 && pendingRefreshReply) {
+            const releaseRefresh = pendingRefreshReply;
+            pendingRefreshReply = null;
+            releaseRefresh();
+          }
+          return;
         }
         if (url === `/api/v2/agents/${encodedAgentId}/remember`)
           return reply(200, {
@@ -208,7 +231,10 @@ describe("Memanto", () => {
   });
 
   it("shares one reactivation across concurrent expired-session retries", async () => {
-    const api = await startFakeApi("test-agent", { expireFirstSession: true });
+    const api = await startFakeApi("test-agent", {
+      expireFirstSession: true,
+      coordinateConcurrentExpiration: true,
+    });
     cleanupFns.push(api.close);
 
     const m = new Memanto({ agentId: "test-agent", baseUrl: api.url });
