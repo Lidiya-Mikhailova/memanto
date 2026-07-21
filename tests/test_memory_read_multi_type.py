@@ -5,6 +5,7 @@ import threading
 
 import pytest
 
+import memanto.app.services.memory_read_service as memory_read_service_module
 from memanto.app.services.memory_read_service import MemoryReadService
 from memanto.app.utils.errors import MemoryError
 
@@ -126,6 +127,32 @@ def test_multi_type_searches_run_concurrently():
         "fact",
         "preference",
     }
+
+
+def test_multi_type_execution_time_reports_parallel_wall_clock(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Reported latency measures the dispatch window, not summed worker time."""
+    timestamps = iter([100.0, 100.025])
+    monkeypatch.setattr(
+        memory_read_service_module, "monotonic", lambda: next(timestamps)
+    )
+    client = _Client(
+        [
+            _memory("fact", "fact", 0.8),
+            _memory("preference", "preference", 0.9),
+        ]
+    )
+    service = MemoryReadService(client)
+
+    result = service.search_memories(
+        query="project context",
+        agent_id="agent-1",
+        type=["fact", "preference"],
+        limit=10,
+    )
+
+    assert result["execution_time"] == pytest.approx(0.025)
 
 
 def test_duplicate_type_does_not_issue_duplicate_backend_search():

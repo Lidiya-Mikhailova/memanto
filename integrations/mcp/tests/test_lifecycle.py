@@ -93,6 +93,25 @@ def test_same_agent_reuses_activated_session_client(
     assert len(_FakeSdkClient.instances) == 2  # admin + one agent session
 
 
+def test_unique_agent_ids_cannot_grow_session_registry_without_bound(
+    lifecycle: MemantoLifecycle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Capacity pressure rejects new IDs without disturbing existing clients."""
+    monkeypatch.setattr(lifecycle, "_MAX_SESSION_CLIENTS", 2)
+
+    first_client = lifecycle.client_for("agent-a")
+    lifecycle.client_for("agent-b")
+
+    with pytest.raises(SessionError, match=r"capacity reached \(2\)"):
+        lifecycle.client_for("agent-c")
+
+    assert lifecycle.client_for("agent-a") is first_client
+    assert set(lifecycle._session_clients) == {"agent-a", "agent-b"}
+    assert set(lifecycle._agent_locks) == {"agent-a", "agent-b"}
+    assert lifecycle._ensured_agents == {"agent-a", "agent-b"}
+    assert len(_FakeSdkClient.instances) == 3  # admin + two bounded sessions
+
+
 def test_different_agents_initialize_in_parallel(
     lifecycle: MemantoLifecycle, monkeypatch: pytest.MonkeyPatch
 ) -> None:

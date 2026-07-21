@@ -33,6 +33,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# A long-running MCP server may receive caller-controlled agent IDs. Keep the
+# registry bounded rather than retaining a new SDK client and lock forever for
+# every unique value. Existing entries are never evicted because callers keep
+# using the returned clients after ``client_for`` releases its setup lock.
+MAX_SESSION_CLIENTS = 128
+
 
 class NoAgentConfiguredError(ValueError):
     """Raised when a tool call omits agent_id and no default is configured."""
@@ -40,6 +46,8 @@ class NoAgentConfiguredError(ValueError):
 
 class MemantoLifecycle:
     """Owns an administrative client and isolated per-agent session clients."""
+
+    _MAX_SESSION_CLIENTS = MAX_SESSION_CLIENTS
 
     def __init__(self, settings: MCPServerSettings) -> None:
         self._settings = settings
@@ -97,9 +105,16 @@ class MemantoLifecycle:
         with self._lock:
             client = self._session_clients.get(agent_id)
             if client is None:
+                if len(self._session_clients) >= self._MAX_SESSION_CLIENTS:
+                    raise SessionError(
+                        "Memanto MCP session-client capacity reached "
+                        f"({self._MAX_SESSION_CLIENTS}); reuse an existing agent_id "
+                        "or restart the server to clear idle session clients."
+                    )
                 client = SdkClient(api_key=self._settings.api_key_value())
                 self._session_clients[agent_id] = client
-            agent_lock = self._agent_locks.setdefault(agent_id, threading.Lock())
+                self._agent_locks[agent_id] = threading.Lock()
+            agent_lock = self._agent_locks[agent_id]
 
         with agent_lock:
             with self._lock:

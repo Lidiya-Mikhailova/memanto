@@ -5,6 +5,7 @@ Memory Read Service
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from time import monotonic
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
@@ -179,6 +180,7 @@ class MemoryReadService:
                     ),
                 )
 
+            dispatch_start = monotonic()
             if len(enhanced_queries) == 1:
                 search_results = [_dispatch(enhanced_queries[0])]
             else:
@@ -191,15 +193,11 @@ class MemoryReadService:
                 max_workers = min(len(enhanced_queries), 8)
                 with ThreadPoolExecutor(max_workers=max_workers) as pool:
                     search_results = list(pool.map(_dispatch, enhanced_queries))
+            execution_time = monotonic() - dispatch_start
 
             search_items: list[Any] = []
-            execution_time = 0.0
             for search_result in search_results:
                 search_items.extend(search_result.get("results", []))
-                try:
-                    execution_time += float(search_result.get("execution_time", 0))
-                except (TypeError, ValueError):
-                    pass
 
             # Format results
             all_results = [self._format_memory_item(item) for item in search_items]

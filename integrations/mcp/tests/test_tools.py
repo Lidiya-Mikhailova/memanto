@@ -49,6 +49,10 @@ class FakeLifecycle:
     def ensure_ready(self, agent_id: str) -> str:
         return agent_id
 
+    def client_for(self, agent_id: str) -> MagicMock:
+        self.ensure_ready(agent_id)
+        return self.client
+
 
 def test_batch_remember_normalizes_comma_separated_tags() -> None:
     mcp = FakeMCP()
