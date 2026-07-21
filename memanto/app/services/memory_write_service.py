@@ -252,9 +252,10 @@ class MemoryWriteService:
             rejected = 0
             for r in results:
                 status = str(r["status"]).lower()
+                action = str(r.get("action", "")).lower()
                 if status in SUCCESSFUL_UPLOAD_STATUSES:
                     successful += 1
-                elif status == "rejected":
+                elif status == "rejected" or action == "rejected":
                     rejected += 1
                 else:
                     # Absorb any non-standard upload statuses into failed

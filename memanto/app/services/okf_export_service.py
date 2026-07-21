@@ -260,18 +260,18 @@ class OkfExportService:
         """Best-effort parse of a stored ``created_at`` into an aware UTC datetime;
         falls back to now so the activity timeline always has an hour bucket."""
         if isinstance(value, datetime):
-            if value.tzinfo is None:
+            if value.tzinfo is None or value.utcoffset() is None:
                 return value.replace(tzinfo=timezone.utc)
-            return value
+            return value.astimezone(timezone.utc)
         if isinstance(value, str) and value.strip():
             text = value.strip()
             if text.endswith("Z"):
                 text = text[:-1] + "+00:00"
             try:
                 dt = datetime.fromisoformat(text)
-                if dt.tzinfo is None:
+                if dt.tzinfo is None or dt.utcoffset() is None:
                     return dt.replace(tzinfo=timezone.utc)
-                return dt
+                return dt.astimezone(timezone.utc)
             except ValueError:
                 pass
         return datetime.now(timezone.utc)
