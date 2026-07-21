@@ -6,6 +6,7 @@ from memanto.app.routes.memory import RecallRequest
 from memanto.app.services.memory_read_service import MemoryReadService
 from memanto.app.utils.temporal_helpers import (
     build_temporal_query,
+    get_yesterday_range,
     parse_as_of_timestamp,
     parse_iso_timestamp,
     parse_relative_time,
@@ -71,6 +72,20 @@ def test_build_temporal_query_rejects_invalid_relative_time():
             "deployment notes",
             relative_time="last 0 days",
         )
+
+
+def test_build_temporal_query_bounds_yesterday_to_that_calendar_day():
+    start, end = get_yesterday_range()
+
+    payload = build_temporal_query(
+        "http://localhost:8000",
+        "agent-1",
+        "deployment notes",
+        relative_time="yesterday",
+    )["json"]
+
+    assert payload["created_after"] == start
+    assert payload["created_before"] == end
 
 
 def test_parse_as_of_timestamp_treats_date_only_as_end_of_day():
