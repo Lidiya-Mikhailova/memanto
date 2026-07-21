@@ -377,6 +377,7 @@ async def remember(
                 agent_id=agent_id,
                 session_id=session.session_id,
                 memory_record=memory,
+                memory_id=result.get("id"),
             )
 
         return {
@@ -457,11 +458,13 @@ async def batch_remember(
             item_result = batch_results[index] if index < len(batch_results) else None
             if not is_successful_write_result(item_result):
                 continue
+            memory_id = item_result.get("id") if isinstance(item_result, dict) else None
             await asyncio.to_thread(
                 session_service.try_log_memory_to_session_summary,
                 agent_id=agent_id,
                 session_id=session.session_id,
                 memory_record=record,
+                memory_id=memory_id,
             )
 
         return {

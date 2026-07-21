@@ -75,6 +75,7 @@ def test_memanto_remember_tool_setup_fallback():
 
 
 def test_memanto_remember_does_not_retry_ambiguous_write_failure():
+    """A non-session error may follow a commit and must not be retried."""
     client = MagicMock()
     client.remember.side_effect = ConnectionError("response lost after remote write")
 

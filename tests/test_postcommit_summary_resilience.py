@@ -12,6 +12,7 @@ from memanto.cli.client.sdk_client import SdkClient
 
 @pytest.mark.parametrize("client_cls", [DirectClient, SdkClient])
 def test_remember_returns_committed_result_when_summary_logging_fails(client_cls):
+    """A committed single write remains successful when its summary fails."""
     write_service = MagicMock()
     write_service.store_memory.return_value = {
         "id": "mem-committed",
@@ -53,6 +54,7 @@ def test_remember_returns_committed_result_when_summary_logging_fails(client_cls
 def test_batch_remember_returns_committed_result_when_summary_logging_fails(
     client_cls,
 ):
+    """A committed batch remains successful when its summary fails."""
     write_service = MagicMock()
     committed = {
         "total_submitted": 1,
@@ -88,6 +90,7 @@ def test_batch_remember_returns_committed_result_when_summary_logging_fails(
 
 @pytest.mark.parametrize("client_cls", [DirectClient, SdkClient])
 def test_delete_returns_committed_result_when_summary_logging_fails(client_cls):
+    """A committed deletion remains successful when its summary fails."""
     write_service = MagicMock()
     write_service.delete_memory.return_value = True
     session_service = SessionService.__new__(SessionService)

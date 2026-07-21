@@ -341,6 +341,9 @@ class TestMEMANTOAPI:
         assert response.json()["memory_id"]
         mock_moorcheh.documents.upload.assert_called_once()
         failed_summary.assert_called_once()
+        assert (
+            failed_summary.call_args.kwargs["memory_id"] == response.json()["memory_id"]
+        )
 
     @pytest.mark.asyncio
     async def test_edit_memory_with_session(self, client, auth_headers):
@@ -1099,6 +1102,41 @@ class TestMEMANTOAPI:
         )
         assert response.status_code == 200
         assert response.json()["successful"] == 2
+
+    @pytest.mark.asyncio
+    async def test_batch_remember_logs_authoritative_memory_ids(
+        self, client, auth_headers, mock_moorcheh, monkeypatch
+    ):
+        """Each batch summary receives the ID returned by the committed write."""
+        from memanto.app.services.session_service import get_session_service
+
+        await client.post(
+            "/api/v2/agents",
+            headers=auth_headers,
+            json={"agent_id": self.TEST_AGENT_ID},
+        )
+        activate_response = await client.post(
+            f"/api/v2/agents/{self.TEST_AGENT_ID}/activate", headers=auth_headers
+        )
+        session_token = activate_response.json()["session_token"]
+        mock_moorcheh.documents.upload.return_value = {"status": "success"}
+
+        session_service = get_session_service()
+        summary_log = MagicMock(return_value=True)
+        monkeypatch.setattr(
+            session_service, "try_log_memory_to_session_summary", summary_log
+        )
+
+        response = await client.post(
+            f"/api/v2/agents/{self.TEST_AGENT_ID}/batch-remember",
+            headers={**auth_headers, "X-Session-Token": session_token},
+            json={"memories": [{"content": "First"}, {"content": "Second"}]},
+        )
+
+        assert response.status_code == 200
+        committed_ids = [item["id"] for item in response.json()["results"]]
+        logged_ids = [call.kwargs["memory_id"] for call in summary_log.call_args_list]
+        assert logged_ids == committed_ids
 
     @pytest.mark.asyncio
     async def test_batch_remember_rejects_blank_content(
