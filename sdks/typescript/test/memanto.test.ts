@@ -15,7 +15,7 @@ interface Recorded {
 
 function startFakeApi(
   agentId = "test-agent",
-  opts: { expireFirstSession?: boolean } = {},
+  opts: { expireFirstSession?: boolean; rejectAllSessions?: boolean } = {},
 ): Promise<{
   url: string;
   recorded: Recorded[];
@@ -73,9 +73,10 @@ function startFakeApi(
         if (url === `/api/v2/agents/${encodedAgentId}` && req.method === "DELETE")
           return reply(200, { agent_id: agentId, deleted: true });
         if (
-          opts.expireFirstSession &&
+          (opts.rejectAllSessions || opts.expireFirstSession) &&
           url === `/api/v2/agents/${encodedAgentId}/remember` &&
-          req.headers["x-session-token"] === "fake-token"
+          (opts.rejectAllSessions ||
+            req.headers["x-session-token"] === "fake-token")
         ) {
           return reply(401, { detail: "Session token expired" });
         }
@@ -175,6 +176,29 @@ describe("Memanto", () => {
     const res = await m.remember({ content: "Het likes coffee" });
 
     expect(res).toMatchObject({ memory_id: "mem-1", status: "queued" });
+    const activations = api.recorded.filter((r) => r.url.endsWith("/activate"));
+    const agentLookups = api.recorded.filter(
+      (r) => r.method === "GET" && r.url === "/api/v2/agents/test-agent",
+    );
+    const remembers = api.recorded.filter((r) => r.url.endsWith("/remember"));
+    expect(activations).toHaveLength(2);
+    expect(agentLookups).toHaveLength(1);
+    expect(remembers).toHaveLength(2);
+    expect(remembers[0]?.headers["x-session-token"]).toBe("fake-token");
+    expect(remembers[1]?.headers["x-session-token"]).toBe("refreshed-token");
+  });
+
+  it("returns a second session failure without retrying again", async () => {
+    const api = await startFakeApi("test-agent", { rejectAllSessions: true });
+    cleanupFns.push(api.close);
+
+    const m = new Memanto({ agentId: "test-agent", baseUrl: api.url });
+    cleanupFns.push(() => m.close());
+
+    await expect(m.remember({ content: "Het likes coffee" })).rejects.toThrow(
+      /401/,
+    );
+
     const activations = api.recorded.filter((r) => r.url.endsWith("/activate"));
     const remembers = api.recorded.filter((r) => r.url.endsWith("/remember"));
     expect(activations).toHaveLength(2);

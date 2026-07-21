@@ -395,12 +395,23 @@ export class Memanto {
     // request was waiting for its 401 response.
     if (this.sessionToken && this.sessionToken !== staleToken) return;
     this.sessionToken = null;
-    await this.ensureReady();
+    if (!this.starting) this.starting = this.reactivate();
+    const starting = this.starting;
+    try {
+      await starting;
+    } finally {
+      if (this.starting === starting) this.starting = null;
+    }
   }
 
   private async bootstrap(): Promise<void> {
     await this.lifecycle.start();
     if (this.autoCreate) await this.createAgentIfMissing();
+    await this.activate();
+  }
+
+  private async reactivate(): Promise<void> {
+    await this.lifecycle.start();
     await this.activate();
   }
 
@@ -431,6 +442,21 @@ export class Memanto {
     this.sessionToken = session.session_token;
   }
 
+  private async sendWithSessionRetry(
+    send: () => Promise<Response>,
+    headers: Record<string, string>,
+    retryOn401: boolean,
+  ): Promise<Response> {
+    const staleToken = this.sessionToken;
+    let res = await send();
+    if (retryOn401 && res.status === 401) {
+      await this.refreshExpiredSession(staleToken);
+      headers["X-Session-Token"] = this.sessionToken ?? "";
+      res = await send();
+    }
+    return res;
+  }
+
   private async request<T = unknown>(
     method: string,
     path: string,
@@ -453,13 +479,7 @@ export class Memanto {
     const serializedBody = body === undefined ? undefined : JSON.stringify(body);
     const send = () =>
       fetch(`${baseUrl}${path}`, { method, headers, body: serializedBody });
-    const staleToken = this.sessionToken;
-    let res = await send();
-    if (requireSession && res.status === 401) {
-      await this.refreshExpiredSession(staleToken);
-      headers["X-Session-Token"] = this.sessionToken ?? "";
-      res = await send();
-    }
+    const res = await this.sendWithSessionRetry(send, headers, requireSession);
     if (!res.ok) throw await asError(res, `${method} ${path} failed`);
     if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
@@ -507,13 +527,7 @@ export class Memanto {
         duplex: "half",
       } as RequestInit & { duplex: "half" });
     };
-    const staleToken = this.sessionToken;
-    let res = await send();
-    if (res.status === 401) {
-      await this.refreshExpiredSession(staleToken);
-      headers["X-Session-Token"] = this.sessionToken ?? "";
-      res = await send();
-    }
+    const res = await this.sendWithSessionRetry(send, headers, true);
     if (!res.ok) throw await asError(res, `POST ${path} failed`);
     return (await res.json()) as T;
   }
