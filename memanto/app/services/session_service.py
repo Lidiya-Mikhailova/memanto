@@ -465,6 +465,37 @@ class SessionService:
             f.write(f"> {content.replace(chr(10), chr(10) + '> ')}\n\n")
             f.write("---\n\n")
 
+    def try_log_memory_to_session_summary(
+        self,
+        agent_id: str,
+        session_id: str,
+        memory_record: Any,
+        memory_id: str | None = None,
+    ) -> bool:
+        """Best-effort summary logging for an already committed memory.
+
+        The remote memory store is authoritative. Once that write succeeds, an
+        auxiliary local Markdown failure must not make callers report the
+        operation as failed (and potentially retry it with a new memory ID).
+        """
+        try:
+            self.log_memory_to_session_summary(
+                agent_id=agent_id,
+                session_id=session_id,
+                memory_record=memory_record,
+                memory_id=memory_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Memory %s was committed for agent %s, but session summary "
+                "logging failed: %s",
+                memory_id or getattr(memory_record, "id", "unknown"),
+                agent_id,
+                exc,
+            )
+            return False
+        return True
+
     def log_memory_deletion_to_session_summary(
         self,
         agent_id: str,
@@ -502,6 +533,30 @@ class SessionService:
             f.write(f"- **Memory ID**: `{memory_id}`\n")
             f.write("- **Confidence**: `1.0`\n")
             f.write("---\n\n")
+
+    def try_log_memory_deletion_to_session_summary(
+        self,
+        agent_id: str,
+        session_id: str,
+        memory_id: str,
+    ) -> bool:
+        """Best-effort summary logging for an already committed deletion."""
+        try:
+            self.log_memory_deletion_to_session_summary(
+                agent_id=agent_id,
+                session_id=session_id,
+                memory_id=memory_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Memory %s was deleted for agent %s, but session summary "
+                "logging failed: %s",
+                memory_id,
+                agent_id,
+                exc,
+            )
+            return False
+        return True
 
     def _set_active_session(self, agent_id: str) -> None:
         """Mark session as active"""

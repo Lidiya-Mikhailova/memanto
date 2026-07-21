@@ -1,6 +1,9 @@
 from unittest.mock import MagicMock
 
+import pytest
 from langgraph_memanto.tools import create_memanto_tools
+
+from memanto.app.utils.errors import SessionError
 
 
 def test_create_memanto_tools_returns_all_tools():
@@ -45,9 +48,10 @@ def test_memanto_remember_tool_success():
 
 def test_memanto_remember_tool_setup_fallback():
     client = MagicMock()
-    # First call raises an exception, second call succeeds
+    # A session failure is known to happen before the write begins, so retrying
+    # after setup is safe.
     client.remember.side_effect = [
-        Exception("Not initialized"),
+        SessionError("Not initialized"),
         {"memory_id": "mem-456"},
     ]
 
@@ -68,6 +72,28 @@ def test_memanto_remember_tool_setup_fallback():
     assert client.remember.call_count == 2
     client.create_agent.assert_called_once_with(agent_id="test-agent", pattern="tool")
     client.activate_agent.assert_called_once_with("test-agent", duration_hours=6)
+
+
+def test_memanto_remember_does_not_retry_ambiguous_write_failure():
+    client = MagicMock()
+    client.remember.side_effect = ConnectionError("response lost after remote write")
+
+    tools = create_memanto_tools(client, "test-agent")
+    remember_tool = next(t for t in tools if t.name == "memanto_remember")
+
+    with pytest.raises(ConnectionError, match="response lost"):
+        remember_tool.invoke(
+            {
+                "memory_type": "fact",
+                "title": "Already committed",
+                "content": "Retrying this write would create a duplicate.",
+                "confidence": 0.9,
+                "tags": "integrity",
+            }
+        )
+
+    client.remember.assert_called_once()
+    client.create_agent.assert_not_called()
 
 
 def test_memanto_recall_tool_success():

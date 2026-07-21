@@ -373,7 +373,7 @@ async def remember(
         if is_successful_write_result(result):
             session_service = get_session_service()
             await asyncio.to_thread(
-                session_service.log_memory_to_session_summary,
+                session_service.try_log_memory_to_session_summary,
                 agent_id=agent_id,
                 session_id=session.session_id,
                 memory_record=memory,
@@ -458,7 +458,7 @@ async def batch_remember(
             if not is_successful_write_result(item_result):
                 continue
             await asyncio.to_thread(
-                session_service.log_memory_to_session_summary,
+                session_service.try_log_memory_to_session_summary,
                 agent_id=agent_id,
                 session_id=session.session_id,
                 memory_record=record,
@@ -630,7 +630,7 @@ async def extract_memories_from_conversation(
             if not is_successful_write_result(item_result):
                 continue
             await asyncio.to_thread(
-                session_service.log_memory_to_session_summary,
+                session_service.try_log_memory_to_session_summary,
                 agent_id=agent_id,
                 session_id=session.session_id,
                 memory_record=record,

@@ -663,7 +663,7 @@ class DirectClient:
         # Log to local session Markdown summary only after a durable write.
         if self.session_token and is_successful_write_result(result):
             session_id = "unknown"
-            self._get_session_service().log_memory_to_session_summary(
+            self._get_session_service().try_log_memory_to_session_summary(
                 agent_id=agent_id,
                 session_id=session_id,
                 memory_record=memory,
@@ -774,7 +774,7 @@ class DirectClient:
                 if not is_successful_write_result(item_result):
                     continue
                 mem_id = batch_results[i].get("id")
-                session_svc.log_memory_to_session_summary(
+                session_svc.try_log_memory_to_session_summary(
                     agent_id=agent_id,
                     session_id=session_id,
                     memory_record=mem,
@@ -944,7 +944,7 @@ class DirectClient:
 
         # Log deletion to local session Markdown summary
         if self.session_token:
-            self._get_session_service().log_memory_deletion_to_session_summary(
+            self._get_session_service().try_log_memory_deletion_to_session_summary(
                 agent_id=agent_id,
                 session_id=session.session_id,
                 memory_id=memory_id,
