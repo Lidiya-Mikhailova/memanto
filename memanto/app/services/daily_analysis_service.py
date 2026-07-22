@@ -6,10 +6,14 @@ the AI daily summary and the conflict report.
 """
 
 import json
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
 
-from memanto.app.clients.backend import get_active_llm_model
+from memanto.app.clients.backend import (
+    get_active_embedding_model,
+    get_active_llm_model,
+)
 from memanto.app.clients.moorcheh import get_moorcheh_client
 from memanto.app.config import get_data_dir, settings
 from memanto.app.core import agent_namespace
@@ -21,17 +25,57 @@ from memanto.app.utils.temporal_helpers import (
 )
 from memanto.app.utils.validation import validate_output_path, validate_safe_id
 
+_EMBEDDING_CONTEXT_TOKENS = 2_048
+_EMBEDDING_QUERY_TOKEN_BUDGET = 1_800
+
+
+@lru_cache(maxsize=8)
+def _get_embedding_tokenizer(model: str | None) -> Any | None:
+    """Load the active model's tokenizer without adding a hard dependency.
+
+    ``tiktoken`` is used only when it is already installed and recognizes the
+    configured model. Unknown and server-managed models fall back to the
+    byte-bound path below; this function never downloads tokenizer assets.
+    """
+    if not model:
+        return None
+    try:
+        import tiktoken  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    try:
+        return tiktoken.encoding_for_model(model)
+    except KeyError:
+        return None
+
+
+def _truncate_embedding_query(
+    text: str,
+    *,
+    model: str | None,
+    token_budget: int = _EMBEDDING_QUERY_TOKEN_BUDGET,
+) -> str:
+    """Fit text within the embedding budget using a tokenizer or safe bound."""
+    tokenizer = _get_embedding_tokenizer(model)
+    if tokenizer is not None:
+        token_ids = tokenizer.encode(text)
+        if len(token_ids) <= token_budget:
+            return text
+        return str(tokenizer.decode(token_ids[:token_budget]))
+
+    # Byte-level BPE and SentencePiece token counts cannot exceed the number
+    # of UTF-8 bytes in their input. Limiting bytes is conservative for normal
+    # prose and also bounds dense Unicode when the backend tokenizer is hidden.
+    encoded = text.encode("utf-8")
+    if len(encoded) <= token_budget:
+        return text
+    return encoded[:token_budget].decode("utf-8", errors="ignore")
+
 
 class DailyAnalysisService:
     """Service for analyzing a day's session MD files — generates the
     daily AI summary and the conflict report.
     """
-
-    # ``answer.generate`` embeds the query before retrieval. Keep the daily
-    # session digest below the default on-prem embedding model's 2048-token
-    # context window while passing the complete source text to the LLM through
-    # ``header_prompt``.
-    _MAX_SUMMARY_QUERY_CHARS = 6_000
 
     def __init__(
         self,
@@ -104,7 +148,10 @@ Format the output as a Markdown report:
 ## Key Themes & Activities
 ...
 """
-        retrieval_query = full_text[: self._MAX_SUMMARY_QUERY_CHARS]
+        retrieval_query = _truncate_embedding_query(
+            full_text,
+            model=get_active_embedding_model(),
+        )
         try:
             generate_kwargs: dict[str, Any] = {
                 "namespace": namespace,

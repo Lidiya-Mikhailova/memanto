@@ -18,15 +18,30 @@ def _make_summary_service(tmp_path, monkeypatch, session_content: str):
 
     client = MagicMock()
 
+    class FakeTokenizer:
+        @staticmethod
+        def encode(text: str):
+            return list(text.encode("utf-8"))
+
+        @staticmethod
+        def decode(token_ids):
+            return bytes(token_ids).decode("utf-8", errors="ignore")
+
+    tokenizer = FakeTokenizer()
+
     def reject_oversized_embedding_query(**kwargs):
         query = kwargs["query"]
-        if len(query) > 6_000:
+        if len(tokenizer.encode(query)) > module._EMBEDDING_QUERY_TOKEN_BUDGET:
             raise RuntimeError("embedding input exceeds context length")
         return {"answer": "# Daily Summary"}
 
     client.answer.generate.side_effect = reject_oversized_embedding_query
     monkeypatch.setattr(module, "get_moorcheh_client", lambda: client)
     monkeypatch.setattr(module, "get_active_llm_model", lambda _: "test-model")
+    monkeypatch.setattr(
+        module, "get_active_embedding_model", lambda: "test-embedding-model"
+    )
+    monkeypatch.setattr(module, "_get_embedding_tokenizer", lambda _: tokenizer)
 
     service = module.DailyAnalysisService(
         sessions_dir=sessions_dir,
@@ -46,7 +61,10 @@ def test_busy_day_summary_keeps_embedded_query_within_context_window(
 
     assert result["status"] == "success"
     call_kwargs = client.answer.generate.call_args.kwargs
-    assert len(call_kwargs["query"]) <= 6_000
+    assert (
+        len(call_kwargs["query"].encode("utf-8"))
+        <= module._EMBEDDING_QUERY_TOKEN_BUDGET
+    )
     assert long_content in call_kwargs["header_prompt"]
     assert "Format the output as a Markdown report" in call_kwargs["footer_prompt"]
 
@@ -63,3 +81,18 @@ def test_short_day_summary_preserves_session_text_as_retrieval_query(
     call_kwargs = client.answer.generate.call_args.kwargs
     assert call_kwargs["query"] == short_content
     assert call_kwargs["ai_model"] == "test-model"
+
+
+def test_dense_unicode_fallback_stays_inside_conservative_byte_budget(monkeypatch):
+    """Unknown model tokenizers must still stay safely below 2,048 tokens."""
+    monkeypatch.setattr(module, "_get_embedding_tokenizer", lambda _: None)
+    dense_content = "界" * 5_000
+
+    query = module._truncate_embedding_query(
+        dense_content,
+        model="server-managed-model",
+    )
+
+    assert len(query.encode("utf-8")) <= module._EMBEDDING_QUERY_TOKEN_BUDGET
+    assert dense_content.startswith(query)
+    assert module._EMBEDDING_QUERY_TOKEN_BUDGET < module._EMBEDDING_CONTEXT_TOKENS

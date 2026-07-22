@@ -56,3 +56,24 @@ def get_active_llm_model(cloud_default: str) -> str | None:
     except Exception:
         return None
     return state.get("llm_model") or None
+
+
+def get_active_embedding_model() -> str | None:
+    """Return the configured on-prem embedding model, when it is knowable.
+
+    Moorcheh Cloud owns its embedding configuration server-side, so callers
+    receive ``None`` there and should use a model-independent safe fallback.
+    """
+    from memanto.app.config import settings
+
+    if parse_backend(settings.MEMANTO_BACKEND) != Backend.ON_PREM:
+        return None
+
+    state_path = Path.home() / ".memanto" / "on-prem" / "state.json"
+    if not state_path.exists():
+        return None
+    try:
+        state = json.loads(state_path.read_text())
+    except Exception:
+        return None
+    return state.get("embedding_model") or None

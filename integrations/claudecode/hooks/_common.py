@@ -157,6 +157,8 @@ def read_transcript_for_distillation(
         return None, ""
 
     end = _anchored_end(messages, last_assistant_message)
+    if end is None:
+        return None, ""
     scoped = messages[:end]
 
     skill: str | None = None
@@ -236,18 +238,22 @@ def _is_assistant_role(role: str | None) -> bool:
 def _anchored_end(
     messages: list[tuple[str | None, str]],
     last_assistant_message: str | None,
-) -> int:
-    """Return the exclusive end index for the Stop event's own turn."""
+) -> int | None:
+    """Return the unique exclusive end index for the Stop event's own turn.
+
+    Missing, stale, or ambiguous anchors fail closed so an asynchronous hook
+    cannot silently distill a newer or duplicated turn.
+    """
     if not last_assistant_message or not last_assistant_message.strip():
-        return len(messages)
+        return None
 
     needle = " ".join(last_assistant_message.split())
-    for index in range(len(messages) - 1, -1, -1):
-        role, text = messages[index]
+    matches: list[int] = []
+    for index, (role, text) in enumerate(messages):
         if _is_assistant_role(role) and " ".join(text.split()) == needle:
-            return index + 1
+            matches.append(index + 1)
 
-    return len(messages)
+    return matches[0] if len(matches) == 1 else None
 
 
 def _extract_role_text(entry: Any) -> tuple[str | None, str]:
