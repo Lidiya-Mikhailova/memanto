@@ -32,6 +32,8 @@ from memanto.app.models import (
     RememberResponse,
     TemporalRecallResponse,
     UploadFileResponse,
+    BoundedSource,
+    BoundedTags,
 )
 from memanto.app.models.session import Session
 from memanto.app.routes.auth_deps import get_current_session, get_session_service
@@ -298,8 +300,8 @@ class MemoryEditRequest(BaseModel):
     content: str | None = Field(default=None, max_length=10000)
     type: MemoryType | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
-    tags: list[str] | None = None
-    source: str | None = None
+    tags: BoundedTags | None = None
+    source: BoundedSource | None = None
 
     def to_updates(self) -> dict[str, object]:
         """Return only fields the caller explicitly wants to update."""

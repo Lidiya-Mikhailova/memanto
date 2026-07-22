@@ -1129,6 +1129,22 @@ class TestValidateSafeId:
 
         assert not (tmp_path / "etc").exists()
 
+def test_memory_edit_rejects_oversized_source():
+    from pydantic import ValidationError
+
+    from memanto.app.routes.memory import MemoryEditRequest
+
+    with pytest.raises(ValidationError):
+        MemoryEditRequest(source="x" * 129)
+
+
+def test_memory_edit_strips_valid_tags():
+    from memanto.app.routes.memory import MemoryEditRequest
+
+    request = MemoryEditRequest(tags=[" project ", "important"])
+
+    assert request.tags == ["project", "important"]
+
 
 def test_format_memory_item_tag_stripping():
     from unittest.mock import MagicMock
