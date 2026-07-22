@@ -651,10 +651,14 @@ async def extract_memories_from_conversation(
         session_service = get_session_service()
         batch_results = result.get("results", [])
         for index, record in enumerate(memory_records):
-            memory_id = (
-                batch_results[index].get("id") if index < len(batch_results) else None
-            )
             item_result = batch_results[index] if index < len(batch_results) else None
+            if item_result is not None and not isinstance(item_result, dict):
+                raise MemoryError(
+                    message="Data corruption detected: Received malformed batch result from storage layer.",
+                    details={"item_preview": str(item_result)[:100]},
+                )
+
+            memory_id = item_result.get("id") if item_result else None
             if not is_successful_write_result(item_result):
                 continue
             await asyncio.to_thread(

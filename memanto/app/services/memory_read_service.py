@@ -383,8 +383,8 @@ class MemoryReadService:
             type: Optional memory type filters
             tags: Optional tag filters
             limit: Max results to return
-            created_after: ISO timestamp - include only memories created at/after this time
-            created_before: ISO timestamp - include only memories created at/before this time
+            created_after: ISO timestamp - include only memories created after this time
+            created_before: ISO timestamp - include only memories created before this time
         """
         try:
             from memanto.app.utils.temporal_helpers import parse_iso_timestamp
@@ -766,6 +766,12 @@ class MemoryReadService:
         """
         Format memory item for response.
         """
+        if not isinstance(item, dict):
+            raise MemoryError(
+                message="Data corruption detected: Received malformed memory item from storage layer.",
+                details={"item_preview": str(item)[:100]},
+            )
+
         if not hasattr(self, "_memory_record_cls"):
             from memanto.app.core import MemoryRecord
 
@@ -774,7 +780,10 @@ class MemoryReadService:
         # Check if metadata is in nested format (Moorcheh API spec)
         metadata = item.get("metadata", {})
         if not isinstance(metadata, dict):
-            metadata = {}
+            raise MemoryError(
+                message="Data corruption detected: Received malformed metadata from storage layer.",
+                details={"item_preview": str(item)[:100]},
+            )
 
         # Helper to get field from either nested metadata or flat structure
         def get_field(field_name, flat_field_name=None):

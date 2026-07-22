@@ -32,6 +32,7 @@ from memanto.app.constants import (
 from memanto.app.utils.errors import (
     AgentNotFoundError,
     InvalidSessionTokenError,
+    MemoryError,
     SessionError,
     SessionExpiredError,
     SessionNotFoundError,
@@ -600,11 +601,14 @@ class SdkClient:
 
             for i, mem in enumerate(memory_records):
                 item_result = batch_results[i] if i < len(batch_results) else None
+                if item_result is not None and not isinstance(item_result, dict):
+                    raise MemoryError(
+                        message="Data corruption detected: Received malformed batch result from storage layer.",
+                        details={"item_preview": str(item_result)[:100]},
+                    )
                 if not is_successful_write_result(item_result):
                     continue
-                mem_id = (
-                    item_result.get("id") if isinstance(item_result, dict) else None
-                )
+                mem_id = item_result.get("id") if item_result else None
                 session_svc.log_memory_to_session_summary(
                     agent_id=agent_id,
                     session_id=session_id,
