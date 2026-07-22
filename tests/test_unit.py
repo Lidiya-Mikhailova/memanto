@@ -567,6 +567,8 @@ class TestSessionService:
         """Deleting session state succeeds if another process removes the marker."""
         session_service.create_session("test-agent")
         active_marker = session_service.sessions_dir / "active"
+        active_marker.unlink()
+        active_marker.write_text("test-agent")
         original_open = open
 
         def disappearing_marker(file, *args, **kwargs):

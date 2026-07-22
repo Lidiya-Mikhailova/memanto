@@ -76,4 +76,7 @@ def get_active_embedding_model() -> str | None:
         state = json.loads(state_path.read_text())
     except Exception:
         return None
-    return state.get("embedding_model") or None
+    if not isinstance(state, dict):
+        return None
+    model = state.get("embedding_model")
+    return model if isinstance(model, str) and model else None
