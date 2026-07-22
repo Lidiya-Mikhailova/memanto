@@ -419,14 +419,7 @@ def register_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
                 agent_id=resolved,
                 memories=normalized_memories,
             )
-            sub_results = [
-                BatchRememberItemResult(
-                    id=r.get("id"),
-                    status=r.get("status", "queued"),
-                    error=r.get("error"),
-                )
-                for r in result.get("results", [])
-            ]
+            sub_results = _to_batch_item_results(result.get("results"))
             return BatchRememberResult(
                 status="ok",
                 agent_id=resolved,
@@ -931,3 +924,33 @@ def _to_memory_hit(raw: dict[str, Any]) -> MemoryHit:
             else raw.get("similarity_score")
         ),
     )
+
+
+def _string_or_none(value: Any) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _to_batch_item_results(raw_results: Any) -> list[BatchRememberItemResult]:
+    """Normalize per-item batch results without failing on malformed rows."""
+    if not isinstance(raw_results, list):
+        return []
+
+    items: list[BatchRememberItemResult] = []
+    for raw in raw_results:
+        if not isinstance(raw, dict):
+            from memanto.app.utils.errors import MemoryError
+            raise MemoryError(
+                message="Data corruption detected: Received malformed batch result from storage layer in MCP integration.",
+                details={"item_preview": str(raw)[:100]}
+            )
+        try:
+            items.append(
+                BatchRememberItemResult(
+                    id=_string_or_none(raw.get("id")),
+                    status=str(raw.get("status") or "queued"),
+                    error=_string_or_none(raw.get("error")),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    return items
