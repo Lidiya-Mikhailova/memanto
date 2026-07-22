@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, field_validator
 from memanto.app.clients.backend import get_active_llm_model
 from memanto.app.clients.moorcheh import get_moorcheh_client
 from memanto.app.config import settings
-from memanto.app.constants import VALID_MEMORY_TYPES
+from memanto.app.constants import VALID_MEMORY_TYPES, MemoryType
 from memanto.app.core import MemoryRecord
 from memanto.app.models import (
     AnswerRequest,
@@ -296,7 +296,7 @@ class MemoryEditRequest(BaseModel):
 
     title: str | None = Field(default=None, max_length=100)
     content: str | None = Field(default=None, max_length=10000)
-    type: str | None = None
+    type: MemoryType | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     tags: list[str] | None = None
     source: str | None = None
