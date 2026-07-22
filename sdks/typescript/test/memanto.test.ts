@@ -17,6 +17,7 @@ function startFakeApi(
   agentId = "test-agent",
   opts: {
     expireFirstSession?: boolean;
+    expireFirstUpload?: boolean;
     rejectAllSessions?: boolean;
     coordinateConcurrentExpiration?: boolean;
   } = {},
@@ -86,7 +87,10 @@ function startFakeApi(
           return reply(404, { detail: "not found" });
         if (url === "/api/v2/agents" && req.method === "POST")
           return reply(201, { agent_id: agentId });
-        if (url === `/api/v2/agents/${encodedAgentId}` && req.method === "DELETE")
+        if (
+          url === `/api/v2/agents/${encodedAgentId}` &&
+          req.method === "DELETE"
+        )
           return reply(200, { agent_id: agentId, deleted: true });
         if (
           (opts.rejectAllSessions || opts.expireFirstSession) &&
@@ -125,13 +129,20 @@ function startFakeApi(
         if (
           url === `/api/v2/agents/${encodedAgentId}/upload-file` &&
           req.method === "POST"
-        )
+        ) {
+          if (
+            opts.expireFirstUpload &&
+            req.headers["x-session-token"] === "fake-token"
+          ) {
+            return reply(401, { detail: "Session token expired" });
+          }
           return reply(200, {
             agent_id: agentId,
             session_id: "sess-1",
             status: "queued",
             file_name: "notes.txt",
           });
+        }
         return reply(404, { detail: "unknown route" });
       });
     });
@@ -172,9 +183,7 @@ describe("Memanto", () => {
     const res = await m.remember({ content: "Het likes coffee" });
     expect(res).toMatchObject({ memory_id: "mem-1", status: "queued" });
 
-    const remember = api.recorded.find((r) =>
-      r.url.endsWith("/remember"),
-    );
+    const remember = api.recorded.find((r) => r.url.endsWith("/remember"));
     expect(remember?.headers["x-session-token"]).toBe("fake-token");
   });
 
@@ -249,8 +258,9 @@ describe("Memanto", () => {
     const activations = api.recorded.filter((r) => r.url.endsWith("/activate"));
     const remembers = api.recorded.filter((r) => r.url.endsWith("/remember"));
     expect(activations).toHaveLength(2);
-    expect(remembers.filter((r) => r.headers["x-session-token"] === "fake-token"))
-      .toHaveLength(2);
+    expect(
+      remembers.filter((r) => r.headers["x-session-token"] === "fake-token"),
+    ).toHaveLength(2);
     expect(
       remembers.filter(
         (r) => r.headers["x-session-token"] === "refreshed-token",
@@ -312,9 +322,7 @@ describe("Memanto", () => {
     const res = await m.uploadFile({ path });
     expect(res).toMatchObject({ status: "queued", file_name: "notes.txt" });
 
-    const upload = api.recorded.find((r) =>
-      r.url.endsWith("/upload-file"),
-    );
+    const upload = api.recorded.find((r) => r.url.endsWith("/upload-file"));
     expect(upload?.headers["x-session-token"]).toBe("fake-token");
     expect(upload?.headers["content-type"]).toContain(
       "multipart/form-data; boundary=",
@@ -324,6 +332,37 @@ describe("Memanto", () => {
     );
     expect(upload?.body).toContain('name="file"; filename="notes.txt"');
     expect(upload?.body).toContain("hello upload");
+  });
+
+  it("rebuilds a streamed upload after session reactivation", async () => {
+    const api = await startFakeApi("test-agent", { expireFirstUpload: true });
+    cleanupFns.push(api.close);
+
+    const dir = await mkdtemp(join(tmpdir(), "memanto-sdk-"));
+    cleanupFns.push(() => rm(dir, { recursive: true, force: true }));
+    const path = join(dir, "notes.txt");
+    await writeFile(path, "hello retried upload");
+
+    const m = new Memanto({ agentId: "test-agent", baseUrl: api.url });
+    cleanupFns.push(() => m.close());
+
+    const res = await m.uploadFile({ path });
+
+    expect(res).toMatchObject({ status: "queued", file_name: "notes.txt" });
+    const activations = api.recorded.filter((r) => r.url.endsWith("/activate"));
+    const uploads = api.recorded.filter((r) => r.url.endsWith("/upload-file"));
+    expect(activations).toHaveLength(2);
+    expect(uploads).toHaveLength(2);
+    expect(uploads.map((r) => r.headers["x-session-token"])).toEqual([
+      "fake-token",
+      "refreshed-token",
+    ]);
+    expect(uploads.every((r) => r.body.includes("hello retried upload"))).toBe(
+      true,
+    );
+    expect(uploads[0]?.headers["content-type"]).not.toBe(
+      uploads[1]?.headers["content-type"],
+    );
   });
 
   it("rejects empty agentId", () => {
@@ -338,7 +377,9 @@ describe("Memanto", () => {
     const m = new Memanto({ agentId, baseUrl: api.url });
     cleanupFns.push(() => m.close());
 
-    await m.remember({ content: "Scoped agent ids must stay in one path segment" });
+    await m.remember({
+      content: "Scoped agent ids must stay in one path segment",
+    });
 
     const encodedAgentId = encodeURIComponent(agentId);
     expect(api.recorded.map((r) => r.url)).toContain(
@@ -354,6 +395,8 @@ describe("Memanto", () => {
     const create = api.recorded.find(
       (r) => r.method === "POST" && r.url === "/api/v2/agents",
     );
-    expect(JSON.parse(create?.body ?? "{}")).toMatchObject({ agent_id: agentId });
+    expect(JSON.parse(create?.body ?? "{}")).toMatchObject({
+      agent_id: agentId,
+    });
   });
 });
