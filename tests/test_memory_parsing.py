@@ -12,7 +12,7 @@ def make_memory(content: str, memory_type: MemoryType | None = None) -> MemoryRe
         type=memory_type or "fact",
         title="test",
         actor_id="user",
-        source="test",
+        source="system",
         agent_id="test",
     )
     if memory_type is None:

@@ -432,7 +432,7 @@ class TestMemoryWriteServiceDelete:
             "scope_type": "agent",
             "scope_id": "test-agent",
             "actor_id": "tester",
-            "source": "manual",
+            "source": "system",
             "confidence": 0.8,
             "status": "active",
             "tags": [],
@@ -837,7 +837,7 @@ class TestMemoryWriteServiceTimestamps:
             content="Original imported memory",
             agent_id="test-agent",
             actor_id="test-agent",
-            source="mem0",
+            source="system",
             provenance="imported",
             created_at=source_created,
         )
