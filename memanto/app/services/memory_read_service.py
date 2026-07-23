@@ -237,7 +237,9 @@ class MemoryReadService:
                     "temporal_mode": "as_of",
                 }
 
-            all_memories = self._fetch_all_memories(namespaces, type=type, tags=tags)
+            all_memories = self._fetch_all_memories(
+                namespaces, type=type, tags=tags, filter_expired=False
+            )
             all_memories = self._apply_temporal_filter(
                 all_memories, created_before=as_of_dt.isoformat()
             )
@@ -426,6 +428,7 @@ class MemoryReadService:
         namespaces: list[str],
         type: list[str] | None = None,
         tags: list[str] | None = None,
+        filter_expired: bool = True,
     ) -> list[dict[str, Any]]:
         """
         List all stored memories across the given namespaces via Moorcheh's
@@ -434,6 +437,13 @@ class MemoryReadService:
 
         Iterates through all pages using cursor-based pagination (next_token)
         so results are not truncated at the 100-item per-page cap.
+
+        ``filter_expired`` controls whether memories expired at the current
+        wall-clock time are dropped. Point-in-time callers such as
+        ``search_as_of`` must pass ``filter_expired=False`` and apply their
+        own expiry check against the target date, otherwise memories that
+        were valid at that past date but have since expired are silently
+        dropped (timeline amnesia).
         """
         items: list[Any] = []
         for ns in namespaces:
@@ -479,7 +489,9 @@ class MemoryReadService:
 
             memories.append(formatted)
 
-        return self._filter_expired_memories(memories)
+        if filter_expired:
+            return self._filter_expired_memories(memories)
+        return memories
 
     def _memory_version_key(
         self, memory: dict[str, Any], fetch_index: int
