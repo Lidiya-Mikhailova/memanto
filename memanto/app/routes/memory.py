@@ -25,6 +25,8 @@ from memanto.app.models import (
     AnswerResponse,
     BatchRememberRequest,
     BatchRememberResponse,
+    BoundedSource,
+    BoundedTags,
     ConflictResolveRequest,
     ExtractMemoriesRequest,
     RecallResponse,
@@ -32,8 +34,6 @@ from memanto.app.models import (
     RememberResponse,
     TemporalRecallResponse,
     UploadFileResponse,
-    BoundedSource,
-    BoundedTags,
 )
 from memanto.app.models.session import Session
 from memanto.app.routes.auth_deps import get_current_session, get_session_service
@@ -42,7 +42,11 @@ from memanto.app.services.conversation_memory_extraction_service import (
 )
 from memanto.app.services.memory_read_service import MemoryReadService
 from memanto.app.services.memory_write_service import MemoryWriteService
-from memanto.app.utils.errors import AuthorizationError, map_error_to_http_exception
+from memanto.app.utils.errors import (
+    AuthorizationError,
+    MemoryError,
+    map_error_to_http_exception,
+)
 from memanto.app.utils.validation import (
     CostGuard,
     is_successful_write_result,

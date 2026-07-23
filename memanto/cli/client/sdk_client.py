@@ -25,6 +25,7 @@ from memanto.app.constants import (
 )
 from memanto.app.constants import (
     MemoryType,
+    SourceType,
 )
 from memanto.app.constants import (
     ProvenanceType as MemoryProvenance,
@@ -430,7 +431,7 @@ class SdkClient:
         content: str,
         confidence: float = 0.8,
         tags: list[str] | None = None,
-        source: str = "user",
+        source: SourceType = "user",
         provenance: str | None = None,
     ) -> dict[str, Any]:
         """

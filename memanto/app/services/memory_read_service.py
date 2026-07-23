@@ -383,8 +383,8 @@ class MemoryReadService:
             type: Optional memory type filters
             tags: Optional tag filters
             limit: Max results to return
-            created_after: ISO timestamp - include only memories created after this time
-            created_before: ISO timestamp - include only memories created before this time
+            created_after: ISO timestamp - include only memories created at/after this time
+            created_before: ISO timestamp - include only memories created at/before this time
         """
         try:
             from memanto.app.utils.temporal_helpers import parse_iso_timestamp

@@ -18,7 +18,9 @@ MemoryType = Literal[
 ]
 
 # Source Types
-SourceType = Literal["user", "agent", "tool", "system"]  # e.g., "user", "agent", "tool", "system", or specific "agent_name"
+SourceType = Literal[
+    "user", "agent", "tool", "system"
+]  # e.g., "user", "agent", "tool", "system", or specific "agent_name"
 
 # Status Types
 StatusType = Literal["active", "superseded", "deleted", "provisional"]

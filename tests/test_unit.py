@@ -1129,6 +1129,7 @@ class TestValidateSafeId:
 
         assert not (tmp_path / "etc").exists()
 
+
 def test_memory_edit_rejects_oversized_source():
     from pydantic import ValidationError
 

@@ -5,7 +5,13 @@ MEMANTO API Models
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from memanto.app.constants import (
     VALID_PROVENANCE_TYPES,
@@ -22,11 +28,17 @@ def _validate_non_blank_content(value: str) -> str:
     return value
 
 
-MemoryTag = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+MemoryTag = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)
+]
 BoundedTags = Annotated[list[MemoryTag], Field(max_length=20)]
 
-BoundedSource = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
-BoundedSourceRef = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)]
+BoundedSource = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)
+]
+BoundedSourceRef = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)
+]
 
 
 # Request Models
@@ -38,7 +50,7 @@ class MemoryStoreRequest(BaseModel):
     content: str = Field(max_length=10000)
     agent_id: str
     actor_id: str
-    source: BoundedSource
+    source: SourceType
     source_ref: BoundedSourceRef | None = None
     confidence: float = Field(ge=0.0, le=1.0, default=0.8)
     tags: BoundedTags = Field(default_factory=list)
@@ -58,7 +70,7 @@ class MemoryBatchItem(BaseModel):
     type: MemoryType
     title: str = Field(max_length=100)
     content: str = Field(max_length=10000)
-    source: BoundedSource
+    source: SourceType
     source_ref: BoundedSourceRef | None = None
     confidence: float = Field(ge=0.0, le=1.0, default=0.8)
     tags: BoundedTags = Field(default_factory=list)
@@ -96,7 +108,7 @@ class BatchRememberItem(BaseModel):
     )
     confidence: float = Field(0.8, ge=0.0, le=1.0, description="Confidence score (0-1)")
     tags: BoundedTags | None = Field(None, description="Tags for this memory")
-    source: BoundedSource = Field("agent", description="Source of memory")
+    source: SourceType = Field("agent", description="Source of memory")
     provenance: str = Field(
         "explicit_statement",
         description="How memory was obtained (explicit_statement, inferred, observed, etc.)",
