@@ -263,6 +263,11 @@ def remember(
     # Parse tags
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
 
+    if source not in {"user", "agent", "tool", "system"}:
+        _error(
+            f"Invalid source: '{source}'. Must be one of user, agent, tool, or system."
+        )
+
     try:
         with console.status("[cyan]Storing memory...", spinner="dots"):
             result = client.remember(

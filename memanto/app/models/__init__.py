@@ -3,12 +3,11 @@ MEMANTO API Models
 """
 
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from pydantic import (
     BaseModel,
     Field,
-    StringConstraints,
     field_validator,
     model_validator,
 )
@@ -19,6 +18,10 @@ from memanto.app.constants import (
     SourceType,
     StatusType,
 )
+from memanto.app.core import (
+    BoundedSourceRef,
+    BoundedTags,
+)
 
 
 def _validate_non_blank_content(value: str) -> str:
@@ -26,19 +29,6 @@ def _validate_non_blank_content(value: str) -> str:
     if not value.strip():
         raise ValueError("Memory content must be a non-empty string")
     return value
-
-
-MemoryTag = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)
-]
-BoundedTags = Annotated[list[MemoryTag], Field(max_length=20)]
-
-BoundedSource = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)
-]
-BoundedSourceRef = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)
-]
 
 
 # Request Models

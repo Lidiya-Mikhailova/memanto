@@ -24,6 +24,7 @@ from memanto.app.utils.errors import (
     AgentAlreadyExistsError,
     AgentNotFoundError,
     MemantoError,
+    MemoryError,
 )
 from memanto.app.utils.validation import InputLimits
 from pydantic import BaseModel, Field
@@ -931,15 +932,16 @@ def _string_or_none(value: Any) -> str | None:
 
 
 def _to_batch_item_results(raw_results: Any) -> list[BatchRememberItemResult]:
-    """Normalize per-item batch results without failing on malformed rows."""
+    """Normalize per-item batch results, failing fast on malformed data."""
     if not isinstance(raw_results, list):
-        return []
+        raise MemoryError(
+            message="Data corruption detected: Received malformed batch result array from storage layer in MCP integration.",
+            details={"items_preview": str(raw_results)[:100]},
+        )
 
     items: list[BatchRememberItemResult] = []
     for raw in raw_results:
         if not isinstance(raw, dict):
-            from memanto.app.utils.errors import MemoryError
-
             raise MemoryError(
                 message="Data corruption detected: Received malformed batch result from storage layer in MCP integration.",
                 details={"item_preview": str(raw)[:100]},

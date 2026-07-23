@@ -3410,8 +3410,12 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 128,
-                "minLength": 1
+                "enum": [
+                  "user",
+                  "agent",
+                  "tool",
+                  "system"
+                ]
               },
               {
                 "type": "null"

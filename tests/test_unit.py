@@ -487,6 +487,36 @@ class TestMemoryWriteServiceDelete:
         assert uploaded.get("original_id") == "orig-123"
         assert "validation_count" not in uploaded
 
+    def test_update_memory_normalizes_legacy_source_values(self):
+        from memanto.app.services.memory_write_service import MemoryWriteService
+
+        client = MagicMock()
+        client.documents.upload.return_value = {"status": "queued"}
+        existing_memory = {
+            "id": "mem-1",
+            "type": "fact",
+            "title": "Title",
+            "content": "Content",
+            "actor_id": "tester",
+            "source": "manual",  # legacy value
+            "confidence": 0.8,
+            "status": "active",
+        }
+
+        with patch(
+            "memanto.app.services.memory_read_service.MemoryReadService.get_memory",
+            return_value=existing_memory,
+        ):
+            MemoryWriteService(client).update_memory(
+                "mem-1",
+                "memanto_agent_test",
+                {"title": "New title"},
+            )
+
+        uploaded = client.documents.upload.call_args.kwargs["documents"][0]
+        # Should normalize 'manual' (invalid SourceType) to 'system'
+        assert uploaded.get("source") == "system"
+
 
 class TestMemoryReadServiceFormatting:
     def test_format_memory_item_preserves_falsey_metadata_values(self):
@@ -543,14 +573,14 @@ class TestMemoryWriteServiceBatch:
                 content="Alex prefers concise status updates.",
                 agent_id="agent-1",
                 actor_id="user-1",
-                source="test",
+                source="system",
             ),
             MemoryRecord(
                 title="Second preference",
                 content="Alex prefers weekly summaries.",
                 agent_id="agent-1",
                 actor_id="user-1",
-                source="test",
+                source="system",
             ),
         ]
 
@@ -572,7 +602,7 @@ class TestMemoryWriteServiceBatch:
                 content="This write should be counted as failed.",
                 agent_id="agent-1",
                 actor_id="user-1",
-                source="test",
+                source="system",
             )
         ]
 
@@ -1175,7 +1205,7 @@ def test_to_moorcheh_document_handles_string_expires_at():
         content="Expires at is a string",
         agent_id="test-agent",
         actor_id="user",
-        source="test",
+        source="system",
     )
     memory.expires_at = "2026-07-10T00:00:00"
 

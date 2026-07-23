@@ -330,6 +330,11 @@ class MemoryWriteService:
                     f"in namespace {namespace}"
                 )
 
+            # Normalize legacy source values
+            source_val = updates.get("source", metadata.get("source", "system"))
+            if source_val not in {"user", "agent", "tool", "system"}:
+                source_val = "system"
+
             # Build updated memory record
             updated_memory = MemoryRecord(
                 id=memory_id,  # Keep same ID
@@ -340,7 +345,7 @@ class MemoryWriteService:
                 content=updates.get("content", existing_memory_data.get("content", "")),
                 agent_id=agent_id,
                 actor_id=updates.get("actor_id", metadata.get("actor_id", "unknown")),
-                source=updates.get("source", metadata.get("source", "system")),
+                source=source_val,
                 source_ref=updates.get("source_ref", metadata.get("source_ref")),
                 confidence=updates.get("confidence", metadata.get("confidence", 0.8)),
                 status=updates.get("status", metadata.get("status", "active")),
