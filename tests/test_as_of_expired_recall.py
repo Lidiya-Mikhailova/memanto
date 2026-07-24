@@ -99,3 +99,41 @@ def test_as_of_keeps_historical_version_over_post_asof_recreate():
     assert "dup-fact" in by_id, "historical version lost to post-as_of recreate"
     assert by_id["dup-fact"]["created_at"] == "2026-01-10T09:00:00Z"
 
+
+def test_as_of_handles_datetime_valued_expiration():
+    """expires_at stored as a datetime object (not a string) must not crash
+    search_as_of and must still be excluded when it predates as_of. Regression
+    for the datetime-expiry gap flagged on PR #1617 / bounty #770."""
+    from datetime import datetime, timezone
+
+    class _DateTimeDocuments:
+        def fetch_text_data(self, **kwargs):
+            return {
+                "items": [
+                    # datetime expiry BEFORE as_of -> must be excluded
+                    {
+                        **_memory("dt-stale", "2026-01-10T09:00:00Z"),
+                        "expires_at": datetime(2026, 1, 8, tzinfo=timezone.utc),
+                    },
+                    # datetime expiry AFTER as_of -> must be kept
+                    {
+                        **_memory("dt-valid", "2026-01-10T09:00:00Z"),
+                        "expires_at": datetime(2026, 6, 1, tzinfo=timezone.utc),
+                    },
+                ],
+                "pagination": {"has_more": False},
+            }
+
+    class _DateTimeClient:
+        documents = _DateTimeDocuments()
+
+    service = MemoryReadService(_DateTimeClient())
+    result = service.search_as_of(
+        as_of_date="2026-01-15", agent_id="agent-1", limit=None
+    )
+    ids = {m["id"] for m in result["results"]}
+
+    assert "dt-valid" in ids
+    assert "dt-stale" not in ids, "datetime expiry before as_of must exclude"
+
+

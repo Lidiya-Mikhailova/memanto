@@ -251,14 +251,25 @@ class MemoryReadService:
             # Filter to only include memories valid at as_of_date
             valid_memories = []
             for memory in all_memories:
-                # Skip if expired before as_of_date
+                # Skip if expired before as_of_date. Mirror the datetime
+                # handling in _filter_expired_memories so a datetime-valued
+                # expires_at cannot crash a historical recall (bounty #770).
                 expires_at = memory.get("expires_at")
                 if expires_at:
                     try:
-                        expires_dt = parse_iso_timestamp(expires_at)
-                        if expires_dt <= as_of_dt:
+                        if isinstance(expires_at, str):
+                            expires_dt = parse_iso_timestamp(expires_at)
+                        elif isinstance(expires_at, datetime):
+                            expires_dt = (
+                                expires_at
+                                if expires_at.tzinfo
+                                else expires_at.replace(tzinfo=timezone.utc)
+                            )
+                        else:
+                            expires_dt = None  # Unknown type: fail open
+                        if expires_dt is not None and expires_dt <= as_of_dt:
                             continue  # Already expired at as_of_date
-                    except (ValueError, AttributeError):
+                    except (ValueError, AttributeError, TypeError):
                         pass
 
                 valid_memories.append(memory)
