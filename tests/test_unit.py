@@ -741,6 +741,41 @@ class TestMemoryReadServiceVersionSelection:
         assert result["results"][0]["change_type"] == "updated"
 
 
+class TestClientApiKeyDispatch:
+    """CLI clients must honor the api_key supplied to the client instance."""
+
+    @pytest.mark.parametrize(
+        "client_cls_path",
+        [
+            "memanto.cli.client.direct_client.DirectClient",
+            "memanto.cli.client.sdk_client.SdkClient",
+        ],
+    )
+    def test_clients_pass_instance_api_key_to_backend_dispatcher(
+        self, monkeypatch, client_cls_path
+    ):
+        from memanto.app.clients import moorcheh as moorcheh_mod
+
+        calls = []
+        fake_backend = object()
+
+        class Recorder:
+            def get_client(self, api_key=None):
+                calls.append(api_key)
+                return fake_backend
+
+        module_name, class_name = client_cls_path.rsplit(".", 1)
+        module = __import__(module_name, fromlist=[class_name])
+        client_cls = getattr(module, class_name)
+
+        monkeypatch.setattr(moorcheh_mod, "moorcheh_client", Recorder())
+
+        client = client_cls(api_key="mk_instance_specific_key")
+
+        assert client._get_moorcheh() is fake_backend
+        assert calls == ["mk_instance_specific_key"]
+
+
 class TestForgetEndToEnd:
     """End-to-end ``forget`` flow through ``DirectClient``: create agent →
     activate → delete_memory. Asserts on-prem's response shape
