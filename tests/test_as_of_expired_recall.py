@@ -65,3 +65,37 @@ def test_as_of_recalls_memory_that_has_since_expired():
     assert "temporal-fact" in ids, "timeline amnesia: since-expired memory lost"
     assert "permanent-fact" in ids
     assert "stale-fact" not in ids, "memory expired before as_of should be excluded"
+
+
+class _DupDocuments:
+    """Same id exposed twice: a version valid at as_of and a newer
+    delete-and-recreate version created *after* as_of."""
+
+    def fetch_text_data(self, **kwargs):
+        return {
+            "items": [
+                _memory("dup-fact", "2026-01-10T09:00:00Z"),
+                _memory("dup-fact", "2026-02-20T09:00:00Z"),
+            ],
+            "pagination": {"has_more": False},
+        }
+
+
+class _DupClient:
+    documents = _DupDocuments()
+
+
+def test_as_of_keeps_historical_version_over_post_asof_recreate():
+    """A delete-and-recreate after as_of must not evict the version that was
+    valid at as_of. Regression for the dedup-before-temporal-filter ordering
+    flagged on PR #1617 / bounty #770."""
+    service = MemoryReadService(_DupClient())
+
+    result = service.search_as_of(
+        as_of_date="2026-01-15", agent_id="agent-1", limit=None
+    )
+    by_id = {m["id"]: m for m in result["results"]}
+
+    assert "dup-fact" in by_id, "historical version lost to post-as_of recreate"
+    assert by_id["dup-fact"]["created_at"] == "2026-01-10T09:00:00Z"
+

@@ -238,7 +238,11 @@ class MemoryReadService:
                 }
 
             all_memories = self._fetch_all_memories(
-                namespaces, type=type, tags=tags, filter_expired=False
+                namespaces,
+                type=type,
+                tags=tags,
+                filter_expired=False,
+                created_before=as_of_dt.isoformat(),
             )
             all_memories = self._apply_temporal_filter(
                 all_memories, created_before=as_of_dt.isoformat()
@@ -429,6 +433,7 @@ class MemoryReadService:
         type: list[str] | None = None,
         tags: list[str] | None = None,
         filter_expired: bool = True,
+        created_before: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         List all stored memories across the given namespaces via Moorcheh's
@@ -444,7 +449,22 @@ class MemoryReadService:
         own expiry check against the target date, otherwise memories that
         were valid at that past date but have since expired are silently
         dropped (timeline amnesia).
+
+        ``created_before`` drops any version whose ``created_at`` is after the
+        given ISO timestamp *before* de-duplication, so point-in-time callers
+        can stop a delete-and-recreate that happened after ``as_of`` from
+        evicting the version that was valid then during newest-version
+        selection (bounty #770).
         """
+        from memanto.app.utils.temporal_helpers import parse_iso_timestamp
+
+        before_dt: datetime | None = None
+        if created_before:
+            try:
+                before_dt = parse_iso_timestamp(created_before)
+            except (TypeError, ValueError, AttributeError):
+                pass  # Fail open: keep newest-version dedup behaviour.
+
         items: list[Any] = []
         for ns in namespaces:
             next_token: str | None = None
@@ -472,6 +492,19 @@ class MemoryReadService:
             mid = formatted.get("id")
             if not mid:
                 continue
+
+            # Point-in-time dedup: only versions that existed at the target
+            # date compete for the newest-version slot, so a delete-and-recreate
+            # after as_of cannot displace the version valid then (bounty #770).
+            if before_dt is not None:
+                raw_created = formatted.get("created_at")
+                if not raw_created:
+                    continue
+                try:
+                    if parse_iso_timestamp(str(raw_created)) > before_dt:
+                        continue
+                except (TypeError, ValueError):
+                    continue
 
             version_key = self._memory_version_key(formatted, index)
             existing = latest_by_id.get(cast(str, mid))
