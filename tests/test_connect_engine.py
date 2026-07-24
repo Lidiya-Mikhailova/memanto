@@ -12,7 +12,7 @@ class DummyConfigManager:
 
 
 def stub_config_manager(monkeypatch):
-    monkeypatch.setattr(engine, "ConfigManager", lambda: DummyConfigManager())
+    monkeypatch.setattr(engine, "ConfigManager", DummyConfigManager)
 
 
 def read_json(path):

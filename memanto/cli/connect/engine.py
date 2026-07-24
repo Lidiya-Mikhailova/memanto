@@ -566,5 +566,6 @@ def _write_or_remove_json(path: Path, data: dict[str, Any]) -> None:
     try:
         if parent.exists() and not any(parent.iterdir()):
             parent.rmdir()
-    except Exception:
+    except (FileNotFoundError, OSError):
+        # Best-effort cleanup: parent may be removed/changed concurrently or be non-removable.
         pass
