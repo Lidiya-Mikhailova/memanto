@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fmoorcheh-ai%2Fmemanto.svg)](https://mcptoplist.com/server/glama%2Fmoorcheh-ai%2Fmemanto)
+
 <p align="center">
     <a href="https://www.memanto.ai/">
     <img alt="MEMANTO Logo" src="https://github.com/moorcheh-ai/memanto/raw/main/assets/memanto-logo.svg" width="500">
