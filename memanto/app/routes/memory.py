@@ -20,6 +20,7 @@ from memanto.app.clients.moorcheh import get_moorcheh_client
 from memanto.app.config import settings
 from memanto.app.constants import VALID_MEMORY_TYPES
 from memanto.app.core import MemoryRecord
+from memanto.app.utils.temporal_helpers import END_OF_DAY, is_date_only
 from memanto.app.models import (
     AnswerRequest,
     AnswerResponse,
@@ -185,13 +186,14 @@ class RecallAsOfRequest(BaseModel):
         if isinstance(v, datetime):
             return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
         if isinstance(v, date):
-            return datetime.combine(v, time(23, 59, 59), tzinfo=timezone.utc)
+            return datetime.combine(v, END_OF_DAY, tzinfo=timezone.utc)
         if isinstance(v, str):
-            # Date-only (no time component) → end of day
-            if "T" not in v and " " not in v:
+            # Date-only (no time component) → end of day. Delegated to the shared
+            # helper so this route and the read service cannot drift apart.
+            if is_date_only(v):
                 try:
                     return datetime.combine(
-                        date.fromisoformat(v), time(23, 59, 59), tzinfo=timezone.utc
+                        date.fromisoformat(v), END_OF_DAY, tzinfo=timezone.utc
                     )
                 except ValueError:
                     pass
