@@ -110,6 +110,8 @@ class RecallRequest(BaseModel):
     @field_validator("created_after", mode="before")
     @classmethod
     def parse_created_after(cls, v: object) -> datetime | None:
+        """Parse the inclusive lower timestamp bound for recall."""
+
         if v is None:
             return None
         return _parse_recall_temporal_bound(v, end_of_day=False)
@@ -117,6 +119,8 @@ class RecallRequest(BaseModel):
     @field_validator("created_before", mode="before")
     @classmethod
     def parse_created_before(cls, v: object) -> datetime | None:
+        """Parse the inclusive upper timestamp bound for recall."""
+
         if v is None:
             return None
         return _parse_recall_temporal_bound(v, end_of_day=True)
@@ -279,6 +283,8 @@ class RecallRecentRequest(BaseModel):
     @field_validator("created_after", mode="before")
     @classmethod
     def parse_created_after(cls, v: object) -> datetime | None:
+        """Parse the inclusive lower timestamp bound for recent recall."""
+
         if v is None:
             return None
         return _parse_recall_temporal_bound(v, end_of_day=False)
@@ -286,6 +292,8 @@ class RecallRecentRequest(BaseModel):
     @field_validator("created_before", mode="before")
     @classmethod
     def parse_created_before(cls, v: object) -> datetime | None:
+        """Parse the inclusive upper timestamp bound for recent recall."""
+
         if v is None:
             return None
         return _parse_recall_temporal_bound(v, end_of_day=True)
@@ -317,6 +325,8 @@ def enforce_session_scope(session: Session, agent_id: str) -> None:
 
 
 def resolve_recall_limit(request_limit: int | None) -> int:
+    """Resolve and validate the effective recall result limit."""
+
     recall_cfg = _config_manager.get_recall_config()
     raw_limit = (
         request_limit

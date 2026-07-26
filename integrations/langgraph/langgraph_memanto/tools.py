@@ -1,3 +1,5 @@
+"""Expose Memanto memory tools for LangGraph agents."""
+
 from __future__ import annotations
 
 from typing import Annotated
@@ -27,6 +29,8 @@ VALID_MEMORY_TYPES = (
 
 
 def create_memanto_tools(client: SdkClient, agent_id: str):
+    """Create LangGraph tools bound to a Memanto client and agent."""
+
     import copy
     import threading
 

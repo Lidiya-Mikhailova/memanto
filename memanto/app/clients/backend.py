@@ -16,6 +16,8 @@ from pathlib import Path
 
 
 class Backend(str, Enum):
+    """Identify a supported Memanto backend deployment type."""
+
     CLOUD = "cloud"
     ON_PREM = "on-prem"
 

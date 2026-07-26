@@ -50,6 +50,8 @@ class MemantoLifecycle:
     _MAX_SESSION_CLIENTS = MAX_SESSION_CLIENTS
 
     def __init__(self, settings: MCPServerSettings) -> None:
+        """Initialize administrative and per-agent client state."""
+
         self._settings = settings
         self._client = SdkClient(api_key=settings.api_key_value())
         self._session_clients: dict[str, SdkClient] = {}

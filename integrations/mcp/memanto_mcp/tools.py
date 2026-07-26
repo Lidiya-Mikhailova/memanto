@@ -139,12 +139,16 @@ class AnswerResult(BaseModel):
 
 
 class BatchRememberItemResult(BaseModel):
+    """Describe the outcome of one item in a batch remember request."""
+
     id: str | None = None
     status: str
     error: str | None = None
 
 
 class BatchRememberResult(BaseModel):
+    """Describe the aggregate outcome of a batch remember request."""
+
     status: str
     agent_id: str
     namespace: str | None = None
@@ -156,6 +160,8 @@ class BatchRememberResult(BaseModel):
 
 
 class AgentInfoResult(BaseModel):
+    """Describe an agent returned by an MCP agent lookup."""
+
     status: str
     agent_id: str | None = None
     namespace: str | None = None
@@ -166,6 +172,8 @@ class AgentInfoResult(BaseModel):
 
 
 class AgentListResult(BaseModel):
+    """Describe the result of listing agents through MCP."""
+
     status: str
     count: int = 0
     agents: list[dict[str, Any]] = Field(default_factory=list)
