@@ -81,6 +81,7 @@ class SessionService:
         self._agent_locks: dict[str, threading.RLock] = {}
         self._agent_locks_guard = threading.Lock()
         self._active_marker_lock = threading.RLock()
+        self._summary_lock = threading.Lock()
 
     @property
     def secret_key(self) -> str:
@@ -602,9 +603,6 @@ class SessionService:
         )
         self._harden_session_storage()
 
-        # Determine if we need to write the header
-        write_header = not summary_file.exists()
-
         # Format the memory into Markdown
         memory_type = (getattr(memory_record, "type", None) or "unclassified").upper()
         title = getattr(memory_record, "title", "Untitled")
@@ -617,28 +615,28 @@ class SessionService:
         status = getattr(memory_record, "status", None)
         tags = getattr(memory_record, "tags", None)
 
-        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
-        with self._open_private_text(summary_file, flags, "a", encoding="utf-8") as f:
-            if write_header:
-                f.write(f"# Session Summary for {agent_id}\n")
-                f.write(f"**Session ID:** `{session_id}`\n\n")
-                f.write("---\n\n")
+        lines = [f"### [{timestamp}] [{memory_type}] {title}\n"]
+        if memory_id:
+            lines.append(f"- **Memory ID**: `{memory_id}`\n")
+        lines.append(f"- **Confidence**: `{confidence}`\n")
+        if status:
+            lines.append(f"- **Status**: `{status}`\n")
+        if source:
+            lines.append(f"- **Source**: `{source}`\n")
+        if provenance:
+            lines.append(f"- **Provenance**: `{provenance}`\n")
+        if tags:
+            lines.append(f"- **Tags**: {', '.join(f'`{t}`' for t in tags)}\n")
+        lines.append("- **Content**:\n")
+        lines.append(f"> {content.replace(chr(10), chr(10) + '> ')}\n\n")
+        lines.append("---\n\n")
 
-            f.write(f"### [{timestamp}] [{memory_type}] {title}\n")
-            if memory_id:
-                f.write(f"- **Memory ID**: `{memory_id}`\n")
-            f.write(f"- **Confidence**: `{confidence}`\n")
-            if status:
-                f.write(f"- **Status**: `{status}`\n")
-            if source:
-                f.write(f"- **Source**: `{source}`\n")
-            if provenance:
-                f.write(f"- **Provenance**: `{provenance}`\n")
-            if tags:
-                f.write(f"- **Tags**: {', '.join(f'`{t}`' for t in tags)}\n")
-            f.write("- **Content**:\n")
-            f.write(f"> {content.replace(chr(10), chr(10) + '> ')}\n\n")
-            f.write("---\n\n")
+        self._append_session_summary(
+            summary_file=summary_file,
+            agent_id=agent_id,
+            session_id=session_id,
+            entry="".join(lines),
+        )
 
     def try_log_memory_to_session_summary(
         self,
@@ -697,19 +695,41 @@ class SessionService:
         )
         self._harden_session_storage()
 
-        write_header = not summary_file.exists()
+        entry = (
+            f"### [{timestamp}] [DELETED] Memory Deleted\n"
+            f"- **Memory ID**: `{memory_id}`\n"
+            "- **Confidence**: `1.0`\n"
+            "---\n\n"
+        )
+        self._append_session_summary(
+            summary_file=summary_file,
+            agent_id=agent_id,
+            session_id=session_id,
+            entry=entry,
+        )
 
-        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
-        with self._open_private_text(summary_file, flags, "a", encoding="utf-8") as f:
-            if write_header:
-                f.write(f"# Session Summary for {agent_id}\n")
-                f.write(f"**Session ID:** `{session_id}`\n\n")
-                f.write("---\n\n")
+    def _append_session_summary(
+        self,
+        summary_file: Path,
+        agent_id: str,
+        session_id: str,
+        entry: str,
+    ) -> None:
+        """Append one complete entry without racing header creation or peer writes."""
+        with self._summary_lock:
+            header = ""
+            if not summary_file.exists():
+                header = (
+                    f"# Session Summary for {agent_id}\n"
+                    f"**Session ID:** `{session_id}`\n\n"
+                    "---\n\n"
+                )
 
-            f.write(f"### [{timestamp}] [DELETED] Memory Deleted\n")
-            f.write(f"- **Memory ID**: `{memory_id}`\n")
-            f.write("- **Confidence**: `1.0`\n")
-            f.write("---\n\n")
+            flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+            with self._open_private_text(
+                summary_file, flags, "a", encoding="utf-8"
+            ) as f:
+                f.write(header + entry)
 
     def try_log_memory_deletion_to_session_summary(
         self,
