@@ -2,6 +2,7 @@
 
 import re
 import threading
+from typing import Any, cast
 
 import pytest
 
@@ -56,6 +57,11 @@ class _Client:
         self.similarity_search = _ExactFilterSearch(rows)
 
 
+def _service(client: _Client) -> MemoryReadService:
+    """Adapt the deliberately minimal structural fake to the SDK client type."""
+    return MemoryReadService(cast(Any, client))
+
+
 class _BarrierSearch:
     """Require two type searches to overlap before either can complete."""
 
@@ -84,7 +90,7 @@ def test_multi_type_recall_queries_each_type_and_returns_ranked_union():
             _memory("instruction-excluded", "instruction", 0.99),
         ]
     )
-    service = MemoryReadService(client)
+    service = _service(client)
 
     result = service.search_memories(
         query="project context",
@@ -114,7 +120,7 @@ def test_multi_type_searches_run_concurrently():
             _memory("preference", "preference", 0.9),
         ]
     )
-    service = MemoryReadService(client)
+    service = _service(client)
 
     result = service.search_memories(
         query="project context",
@@ -143,7 +149,7 @@ def test_multi_type_execution_time_reports_parallel_wall_clock(
             _memory("preference", "preference", 0.9),
         ]
     )
-    service = MemoryReadService(client)
+    service = _service(client)
 
     result = service.search_memories(
         query="project context",
@@ -158,7 +164,7 @@ def test_multi_type_execution_time_reports_parallel_wall_clock(
 def test_duplicate_type_does_not_issue_duplicate_backend_search():
     """Repeated input types collapse to one backend query."""
     client = _Client([_memory("fact", "fact", 0.8)])
-    service = MemoryReadService(client)
+    service = _service(client)
 
     result = service.search_memories(
         query="project context",
@@ -174,7 +180,7 @@ def test_duplicate_type_does_not_issue_duplicate_backend_search():
 def test_invalid_later_type_is_rejected_before_any_backend_search():
     """Validation completes before any query is dispatched."""
     client = _Client([_memory("fact", "fact", 0.8)])
-    service = MemoryReadService(client)
+    service = _service(client)
 
     with pytest.raises(MemoryError, match="Invalid memory_type"):
         service.search_memories(

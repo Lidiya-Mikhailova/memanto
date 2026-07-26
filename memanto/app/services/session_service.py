@@ -72,16 +72,8 @@ class SessionService:
             sessions_dir: Directory for session storage (defaults to ~/.memanto/sessions/)
         """
         self.sessions_dir = sessions_dir or get_data_dir() / "sessions"
-        self.sessions_dir.mkdir(
-            parents=True, exist_ok=True, mode=self._PRIVATE_DIR_MODE
-        )
-        self._harden_session_storage()
-        resolved_secret_key = (
-            secret_key
-            or settings.MEMANTO_SECRET_KEY
-            or self._generate_secure_secret_key()
-        )
-        self.secret_key: str = resolved_secret_key
+        self._secret_key: str | None = secret_key or settings.MEMANTO_SECRET_KEY or None
+        self._storage_hardened = False
         # Serialize lifecycle operations for the same agent so renewal cannot
         # publish a fresh bearer token after logout has completed. Keep the
         # process-wide active marker on its own narrower lock so unrelated
@@ -89,6 +81,13 @@ class SessionService:
         self._agent_locks: dict[str, threading.RLock] = {}
         self._agent_locks_guard = threading.Lock()
         self._active_marker_lock = threading.RLock()
+
+    @property
+    def secret_key(self) -> str:
+        """JWT signing key, generated only when token operations need it."""
+        if self._secret_key is None:
+            self._secret_key = self._generate_secure_secret_key()
+        return self._secret_key
 
     def _lock_for_agent(self, agent_id: str) -> threading.RLock:
         """Return the stable lifecycle lock for one agent."""
@@ -111,18 +110,24 @@ class SessionService:
             pass
 
     def _harden_session_storage(self) -> None:
-        """Protect both newly-created and pre-existing session artifacts.
+        """Create and protect both new and pre-existing session artifacts.
 
         Session JSON files contain live bearer tokens, while summary files can
         contain private memory content. A normal ``mkdir``/``open`` sequence on
         POSIX inherits the process umask and commonly creates these as 0755 and
         0644, allowing other local accounts to traverse and read them.
         """
+        if self._storage_hardened and self.sessions_dir.exists():
+            return
+        self.sessions_dir.mkdir(
+            parents=True, exist_ok=True, mode=self._PRIVATE_DIR_MODE
+        )
         self._set_private_permissions(self.sessions_dir, self._PRIVATE_DIR_MODE)
         for path in self.sessions_dir.iterdir():
             if path.is_symlink() or not path.is_file():
                 continue
             self._set_private_permissions(path, self._PRIVATE_FILE_MODE)
+        self._storage_hardened = True
 
     def _open_private_text(self, path: Path, flags: int, mode: str, **kwargs):
         """Open a text file with owner-only permissions from first creation."""
@@ -176,6 +181,7 @@ class SessionService:
         safely rewritten by the lock holder.
         """
         secret_file = self.sessions_dir.parent / "secret_key"
+        secret_file.parent.mkdir(parents=True, exist_ok=True)
         lock_file = secret_file.with_name(f"{secret_file.name}.lock")
         with self._exclusive_file_lock(lock_file):
             existing = self._read_persisted_secret(secret_file)
@@ -550,6 +556,7 @@ class SessionService:
     def _save_session(self, session: Session) -> None:
         """Save session to file"""
         validate_safe_id(session.agent_id, "agent_id")
+        self._harden_session_storage()
         session_file = self.sessions_dir / f"{session.agent_id}.json"
         self._write_private_json_atomic(session_file, session.model_dump(mode="json"))
 
@@ -557,6 +564,7 @@ class SessionService:
         """Load one session file, treating corrupt local state as absent."""
         if not session_file.exists():
             return None
+        self._harden_session_storage()
 
         try:
             with open(session_file) as f:
@@ -592,6 +600,7 @@ class SessionService:
         summary_file = (
             self.sessions_dir / f"{agent_id}_{date_str}_{session_id}_summary.md"
         )
+        self._harden_session_storage()
 
         # Determine if we need to write the header
         write_header = not summary_file.exists()
@@ -686,6 +695,7 @@ class SessionService:
         summary_file = (
             self.sessions_dir / f"{agent_id}_{date_str}_{session_id}_summary.md"
         )
+        self._harden_session_storage()
 
         write_header = not summary_file.exists()
 
@@ -729,6 +739,7 @@ class SessionService:
         """Mark session as active"""
         validate_safe_id(agent_id, "agent_id")
         with self._active_marker_lock:
+            self._harden_session_storage()
             active_link = self.sessions_dir / "active"
 
             # Remove existing active link
