@@ -26,6 +26,7 @@ provider stays inert.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -65,6 +66,16 @@ _MIN_CAPTURE_LENGTH = 10
 _MAX_TITLE_LENGTH = 100
 _MAX_AGENT_ID_LENGTH = 64
 _ACTIVATION_RETRY_COOLDOWN = 60.0
+
+
+def _sanitize_agent_id(raw: str) -> str:
+    """Sanitize charset and append a stable hash if over 64 chars."""
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", raw)
+    if len(sanitized) > _MAX_AGENT_ID_LENGTH:
+        suffix = hashlib.sha256(raw.encode()).hexdigest()[:8]
+        sanitized = sanitized[: _MAX_AGENT_ID_LENGTH - len(suffix) - 1] + "-" + suffix
+    return sanitized
+
 
 # Memory taxonomy mirrored from memanto.app.constants.VALID_MEMORY_TYPES so the
 # tool schema matches what the backend validates. Kept as a literal list to
@@ -531,7 +542,7 @@ class MemantoMemoryProvider(MemoryProvider):
         raw_id = (
             os.environ.get("MEMANTO_AGENT_ID", "").strip() or self._config["agent_id"]
         )
-        self._agent_id = raw_id.replace("{identity}", identity)
+        self._agent_id = _sanitize_agent_id(raw_id.replace("{identity}", identity))
 
         self._auto_recall = self._config["auto_recall"]
         self._auto_capture = self._config["auto_capture"]

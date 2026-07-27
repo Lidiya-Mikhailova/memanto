@@ -7,6 +7,7 @@ Calls the Moorcheh API directly through existing service classes
 import json
 import logging
 import os
+import re
 import shutil
 import urllib.error
 import urllib.request
@@ -429,6 +430,12 @@ class DirectClient:
             ValueError: If *pattern* is invalid.
             AgentAlreadyExistsError: If agent already exists.
         """
+        if not agent_id:
+            raise ValueError("agent_id must not be empty")
+        if not re.fullmatch(r"^[a-zA-Z0-9_-]+$", agent_id):
+            raise ValueError(
+                f"Invalid agent_id: '{agent_id}'. Only alphanumeric characters, hyphens, and underscores are allowed."
+            )
         if pattern not in _VALID_PATTERNS:
             raise ValueError(
                 f"Invalid pattern '{pattern}'. Must be one of: {', '.join(sorted(_VALID_PATTERNS))}"

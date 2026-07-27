@@ -57,7 +57,9 @@ class FakeSdkClient:
         self.activated_agents.append(agent_id)
         return {"agent_id": agent_id, "session_token": self.session_token}
 
-    def remember(self, *, agent_id: str, **_: Any) -> dict[str, str]:
+    def remember(
+        self, content: str, role: str, *, agent_id: str, **_: Any
+    ) -> dict[str, str]:
         """Fail if a memory call uses a client scoped to another agent."""
         if self.agent_id != agent_id:
             raise AssertionError(f"client for {self.agent_id!r} used for {agent_id!r}")
@@ -99,8 +101,14 @@ def test_ensure_ready_uses_distinct_clients_per_agent(
     assert agent_a_client is not agent_b_client
     assert agent_a_client.agent_id == "agent-a"
     assert agent_b_client.agent_id == "agent-b"
-    assert agent_a_client.remember(agent_id="agent-a")["memory_id"] == "mem-agent-a"
-    assert agent_b_client.remember(agent_id="agent-b")["memory_id"] == "mem-agent-b"
+    assert (
+        agent_a_client.remember("test", "user", agent_id="agent-a")["memory_id"]
+        == "mem-agent-a"
+    )
+    assert (
+        agent_b_client.remember("test", "user", agent_id="agent-b")["memory_id"]
+        == "mem-agent-b"
+    )
 
 
 def test_repeated_agent_reuses_its_scoped_client(

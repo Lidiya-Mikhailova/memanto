@@ -307,7 +307,10 @@ class MemantoStore(BaseStore):
                 if time.time() - ts < self._CACHE_TTL_S:
                     return items
 
-        fetch_limit = max(1, min(op.limit, self._MEMANTO_RECALL_CAP))
+        if min_confidence is not None:
+            fetch_limit = self._MEMANTO_RECALL_CAP
+        else:
+            fetch_limit = max(1, min(op.limit, self._MEMANTO_RECALL_CAP))
         rate_limited = False
 
         client, agent_id = self._ensure_client(op.namespace_prefix)
@@ -431,7 +434,6 @@ class MemantoStore(BaseStore):
                 return t[len(_KEY_TAG_PREFIX) :]
         return None
 
-    @staticmethod
     @staticmethod
     def _passes_min_confidence(mem: dict[str, Any], min_confidence: Any) -> bool:
         try:
