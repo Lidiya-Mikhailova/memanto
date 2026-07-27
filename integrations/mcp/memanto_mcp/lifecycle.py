@@ -53,7 +53,7 @@ class MemantoLifecycle:
         """Initialize administrative and per-agent client state."""
 
         self._settings = settings
-        self._client = SdkClient(api_key=settings.api_key_value())
+        self._admin_client = SdkClient(api_key=settings.api_key_value())
         self._session_clients: dict[str, SdkClient] = {}
         self._agent_locks: dict[str, threading.Lock] = {}
         self._ensured_agents: set[str] = set()
@@ -66,7 +66,7 @@ class MemantoLifecycle:
     @property
     def client(self) -> SdkClient:
         """The shared administrative client for agent CRUD operations."""
-        return self._client
+        return self._admin_client
 
     @property
     def settings(self) -> MCPServerSettings:
@@ -88,14 +88,15 @@ class MemantoLifecycle:
             "configured. Either pass agent_id explicitly or set the env var."
         )
 
-    def ensure_ready(self, agent_id: str) -> str:
+    def ensure_ready(self, agent_id: str) -> SdkClient:
         """Make sure the agent exists and a session is active for it.
 
-        Returns the resolved agent_id (mostly a convenience so callers can
-        chain ``ensure_ready(resolve_agent_id(...))``).
+        Returns an agent-scoped SDK client. ``SdkClient`` stores the active
+        session token on the instance, so sharing one client across multiple
+        concurrent MCP tool calls can make agents overwrite each other's
+        session state.
         """
-        self.client_for(agent_id)
-        return agent_id
+        return self.client_for(agent_id)
 
     def client_for(self, agent_id: str) -> SdkClient:
         """Return a ready client whose session is isolated to ``agent_id``.
@@ -106,6 +107,7 @@ class MemantoLifecycle:
         """
         with self._lock:
             client = self._session_clients.get(agent_id)
+            is_new_client = client is None
             if client is None:
                 if len(self._session_clients) >= self._MAX_SESSION_CLIENTS:
                     raise SessionError(
@@ -119,16 +121,24 @@ class MemantoLifecycle:
             agent_lock = self._agent_locks[agent_id]
 
         with agent_lock:
-            with self._lock:
-                agent_is_ensured = agent_id in self._ensured_agents
-
-            if not agent_is_ensured:
-                self._ensure_agent_exists_locked(client, agent_id)
+            try:
                 with self._lock:
-                    self._ensured_agents.add(agent_id)
+                    agent_is_ensured = agent_id in self._ensured_agents
 
-            if client.agent_id != agent_id:
-                self._activate_locked(client, agent_id)
+                if not agent_is_ensured:
+                    self._ensure_agent_exists_locked(client, agent_id)
+                    with self._lock:
+                        self._ensured_agents.add(agent_id)
+
+                if client.agent_id != agent_id:
+                    self._activate_locked(client, agent_id)
+            except Exception:
+                if is_new_client:
+                    with self._lock:
+                        if self._session_clients.get(agent_id) is client:
+                            self._session_clients.pop(agent_id, None)
+                            self._agent_locks.pop(agent_id, None)
+                raise
 
         return client
 
@@ -144,6 +154,7 @@ class MemantoLifecycle:
     # ------------------------------------------------------------------ #
 
     def _ensure_agent_exists_locked(self, client: SdkClient, agent_id: str) -> None:
+        """Verify an agent exists, auto-creating it when configured."""
         try:
             client.get_agent(agent_id)
             logger.debug("Agent '%s' exists.", agent_id)
@@ -174,6 +185,7 @@ class MemantoLifecycle:
             logger.debug("Agent '%s' was created concurrently.", agent_id)
 
     def _activate_locked(self, client: SdkClient, agent_id: str) -> None:
+        """Activate a Memanto session on the provided agent-scoped client."""
         try:
             client.activate_agent(
                 agent_id=agent_id,

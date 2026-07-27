@@ -46,8 +46,8 @@ class FakeLifecycle:
     def resolve_agent_id(self, agent_id: str | None) -> str:
         return agent_id or self.settings.default_agent_id
 
-    def ensure_ready(self, agent_id: str) -> str:
-        return agent_id
+    def ensure_ready(self, agent_id: str) -> Any:
+        return self.client
 
     def client_for(self, agent_id: str) -> MagicMock:
         self.ensure_ready(agent_id)

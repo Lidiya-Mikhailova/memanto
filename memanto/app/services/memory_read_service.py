@@ -83,13 +83,20 @@ class MemoryReadService:
                 namespace_name=namespace, ids=[memory_id]
             )
 
-            from typing import Any, cast
-
             if not isinstance(result, dict):
-                return None
+                raise MemoryError(
+                    message="Data corruption detected: Received malformed get result from storage layer.",
+                    details={"result_preview": str(result)[:100]},
+                )
 
-            items: list[Any] = cast(list[Any], result.get("items", []))
-            if items and isinstance(items, list) and len(items) > 0:
+            items: Any = result.get("items", [])
+            if not isinstance(items, list):
+                raise MemoryError(
+                    message="Data corruption detected: Received malformed get items array from storage layer.",
+                    details={"items_preview": str(items)[:100]},
+                )
+
+            if items and len(items) > 0:
                 memory = self._format_memory_item(items[0])
 
                 # Apply TTL enforcement
@@ -101,6 +108,8 @@ class MemoryReadService:
 
             return None
 
+        except MemoryError:
+            raise
         except Exception as e:
             raise MemoryError(f"Failed to retrieve memory: {e}")
 
@@ -186,17 +195,14 @@ class MemoryReadService:
             # kiosk_mode + threshold=0.0 still filters everything out.
             use_kiosk = min_similarity_score is not None and min_similarity_score > 0
 
-            def _dispatch(enhanced_query: str) -> dict[str, Any]:
+            def _dispatch(enhanced_query: str) -> Any:
                 """Run one exact-filter search with the shared request options."""
-                return cast(
-                    dict[str, Any],
-                    self.client.similarity_search.query(
-                        query=enhanced_query,
-                        namespaces=namespaces,
-                        top_k=top_k,
-                        threshold=min_similarity_score if use_kiosk else None,
-                        kiosk_mode=use_kiosk,
-                    ),
+                return self.client.similarity_search.query(
+                    query=enhanced_query,
+                    namespaces=namespaces,
+                    top_k=top_k,
+                    threshold=min_similarity_score if use_kiosk else None,
+                    kiosk_mode=use_kiosk,
                 )
 
             dispatch_start = monotonic()
@@ -216,7 +222,28 @@ class MemoryReadService:
 
             search_items: list[Any] = []
             for search_result in search_results:
-                search_items.extend(search_result.get("results", []))
+                if not isinstance(search_result, dict):
+                    try:
+                        search_result = dict(search_result)
+                    except (TypeError, ValueError):
+                        raise MemoryError(
+                            message=(
+                                "Data corruption detected: Received malformed "
+                                "search result from storage layer."
+                            ),
+                            details={"result_preview": str(search_result)[:100]},
+                        )
+
+                result_items = search_result.get("results", [])
+                if not isinstance(result_items, list):
+                    raise MemoryError(
+                        message=(
+                            "Data corruption detected: Received malformed "
+                            "search result array from storage layer."
+                        ),
+                        details={"items_preview": str(result_items)[:100]},
+                    )
+                search_items.extend(result_items)
 
             # Format results
             all_results = [self._format_memory_item(item) for item in search_items]
@@ -280,6 +307,8 @@ class MemoryReadService:
                 "execution_time": execution_time,
             }
 
+        except MemoryError:
+            raise
         except Exception as e:
             raise MemoryError(f"Failed to search memories: {e}")
 
@@ -851,6 +880,12 @@ class MemoryReadService:
         """
         Format memory item for response.
         """
+        if not isinstance(item, dict):
+            raise MemoryError(
+                message="Data corruption detected: Received malformed memory item from storage layer.",
+                details={"item_preview": str(item)[:100]},
+            )
+
         if not hasattr(self, "_memory_record_cls"):
             from memanto.app.core import MemoryRecord
 
@@ -859,7 +894,10 @@ class MemoryReadService:
         # Check if metadata is in nested format (Moorcheh API spec)
         metadata = item.get("metadata", {})
         if not isinstance(metadata, dict):
-            metadata = {}
+            raise MemoryError(
+                message="Data corruption detected: Received malformed metadata from storage layer.",
+                details={"item_preview": str(item)[:100]},
+            )
 
         # Helper to get field from either nested metadata or flat structure
         def get_field(field_name, flat_field_name=None):

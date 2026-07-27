@@ -7,13 +7,16 @@
 <div align="center">
   <h1>Memory that AI Agents Love!</h1>
 </div>
-
 <h2 align="center">
-  <em>A companion memory agent that lets your agents focus and improve while you keep ownership of everything they learn.</em>
+  <em>Memanto is a companion Memory Agent; an agent whose whole job is managing your other agents' memories. It curates what's worth keeping, consolidates it across sessions, and briefs your agents the moment they start, while you keep ownership of everything they learn.</em>
 </h2>
 
 <p align="center">
-  Persistent memory for Claude Code, Cursor, Codex, and 14+ other agents, built on the world's first information-theoretic search engine. 100% free, open source, and runs entirely on your machine - no API keys, no vector database, no backend to babysit.
+  Works automatically with Claude Code, Cursor, Codex, and 20+ other agents. Fully convertible between semantic backend and Open Knowledge Format (*.md files in llm wiki style), so your memory estate is yours to inspect, export, and migrate anywhere — <code>memanto migrate</code> and it moves with you.
+</p>
+
+<p align="center">
+  <code>pip install memanto</code>
 </p>
 
 <p align="center">

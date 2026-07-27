@@ -25,7 +25,7 @@ def test_content_with_newlines_and_tags_preserves_content_integrity():
         content="This is paragraph one.\n\nThis is paragraph two.",
         agent_id="test-agent",
         actor_id="user",
-        source="test",
+        source="system",
         tags=["important", "test"],
     )
 
@@ -54,7 +54,7 @@ def test_content_without_newlines_is_unchanged():
         content="Single line content.",
         agent_id="test-agent",
         actor_id="user",
-        source="test",
+        source="system",
         tags=["tag1"],
     )
 
@@ -75,7 +75,7 @@ def test_content_with_multiple_newlines_and_no_tags():
         content="Para one.\n\nPara two.\n\nPara three.",
         agent_id="test-agent",
         actor_id="user",
-        source="test",
+        source="system",
     )
 
     document = memory.to_moorcheh_document()
@@ -118,7 +118,7 @@ def test_memory_with_tags_in_middle_paragraph_does_not_leak():
         content="Use the #Tags: feature for organization.\n\nThis is fine.",
         agent_id="test-agent",
         actor_id="user",
-        source="test",
+        source="system",
         tags=["label"],
     )
 
@@ -140,7 +140,7 @@ def test_content_only_tag_line_not_confused_with_tags_suffix():
         content="Tags: this is not a tag line\n\nActual second paragraph.",
         agent_id="test-agent",
         actor_id="user",
-        source="test",
+        source="system",
         tags=["foo"],
     )
 
@@ -168,7 +168,7 @@ def test_content_with_tags_line_but_no_metadata_tags_is_not_stripped():
         content="First paragraph.\n\nTags: this is not actually tag metadata",
         agent_id="test-agent",
         actor_id="user",
-        source="test",
+        source="system",
         tags=[],  # No tags stored — "Tags: ..." is content, not metadata
     )
 
@@ -200,7 +200,7 @@ def test_content_with_tags_line_and_real_tags_keeps_content_intact():
         content="Tags: this is inline in the content\n\nMore content here.",
         agent_id="test-agent",
         actor_id="user",
-        source="test",
+        source="system",
         tags=["real-tag"],
     )
 
