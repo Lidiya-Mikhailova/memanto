@@ -60,9 +60,7 @@ class FakeSdkClient:
     def remember(self, *, agent_id: str, **_: Any) -> dict[str, str]:
         """Fail if a memory call uses a client scoped to another agent."""
         if self.agent_id != agent_id:
-            raise AssertionError(
-                f"client for {self.agent_id!r} used for {agent_id!r}"
-            )
+            raise AssertionError(f"client for {self.agent_id!r} used for {agent_id!r}")
         return {"memory_id": f"mem-{agent_id}", "status": "ok"}
 
 
@@ -105,7 +103,9 @@ def test_ensure_ready_uses_distinct_clients_per_agent(
     assert agent_b_client.remember(agent_id="agent-b")["memory_id"] == "mem-agent-b"
 
 
-def test_repeated_agent_reuses_its_scoped_client(fake_api_key: str, monkeypatch) -> None:
+def test_repeated_agent_reuses_its_scoped_client(
+    fake_api_key: str, monkeypatch
+) -> None:
     """Repeated calls for one agent should reuse that agent's client."""
     monkeypatch.setattr("memanto_mcp.lifecycle.SdkClient", FakeSdkClient)
     FakeSdkClient.instances = []

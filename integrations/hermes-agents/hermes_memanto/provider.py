@@ -26,7 +26,6 @@ provider stays inert.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -136,7 +135,6 @@ def _as_bool(value: Any, default: bool) -> bool:
         if lowered in {"false", "0", "no", "n", "off"}:
             return False
     return default
-
 
 
 def _detect_memory_type(text: str) -> str:
@@ -515,7 +513,7 @@ class MemantoMemoryProvider(MemoryProvider):
         sanitized = dict(values or {})
         sanitized.pop("api_key", None)
         # Keep the {identity} template intact; only sanitize concrete ids.
-        
+
         if "pattern" in sanitized:
             pattern = str(sanitized["pattern"]).strip().lower()
             sanitized["pattern"] = (

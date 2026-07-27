@@ -96,10 +96,7 @@ class MemantoLifecycle:
                 self._ensure_agent_exists_locked(client, agent_id)
                 self._ensured_agents.add(agent_id)
 
-            if (
-                agent_id not in self._activated_agents
-                or client.agent_id != agent_id
-            ):
+            if agent_id not in self._activated_agents or client.agent_id != agent_id:
                 self._activate_locked(client, agent_id)
                 self._activated_agents.add(agent_id)
 
