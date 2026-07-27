@@ -235,6 +235,7 @@ class TestSessionService:
     def test_get_active_session_ignores_invalid_session_file(self, session_service):
         """A corrupt active session file should not crash status checks."""
         active_marker = session_service.sessions_dir / "active"
+        active_marker.parent.mkdir(parents=True, exist_ok=True)
         active_marker.write_text("broken-agent")
         (session_service.sessions_dir / "broken-agent.json").write_text("{")
 
@@ -393,6 +394,31 @@ class TestAgentService:
         assert not agent_service.agent_exists("test-agent")
 
         print("✅ Agent deleted successfully")
+
+
+def test_local_services_do_not_create_storage_on_init(tmp_path, monkeypatch):
+    """Constructing local helpers should not write to disk until they save state."""
+    from memanto.cli.config.manager import ConfigManager
+
+    monkeypatch.delenv("MEMANTO_SECRET_KEY", raising=False)
+    monkeypatch.setattr(settings, "MEMANTO_SECRET_KEY", "")
+
+    config_dir = tmp_path / "config"
+    agents_dir = tmp_path / "agents"
+    sessions_dir = tmp_path / "sessions"
+
+    ConfigManager(config_dir=config_dir)
+    agent_service = AgentService(agents_dir=agents_dir)
+    session_service = SessionService(sessions_dir=sessions_dir)
+
+    assert not config_dir.exists()
+    assert not agents_dir.exists()
+    assert not sessions_dir.exists()
+    assert not (tmp_path / "secret_key").exists()
+    assert agent_service.list_agents().count == 0
+    assert (
+        session_service._generate_namespace("test-agent") == "memanto_agent_test-agent"
+    )
 
 
 class TestMemoryWriteServiceDelete:
@@ -959,11 +985,14 @@ class TestMEMANTOArchitecture:
         print(f"✅ V2 namespace format confirmed: {namespace}")
         print("   ✅ NO tenant_id required!")
 
-    def test_jwt_token_structure(self):
+    def test_jwt_token_structure(self, tmp_path):
         """Verify JWT token contains correct fields"""
         from memanto.app.services.session_service import SessionService
 
-        service = SessionService(secret_key="test-secret-min-32-bytes-abcdefg")
+        service = SessionService(
+            secret_key="test-secret-min-32-bytes-abcdefg",
+            sessions_dir=tmp_path / "sessions",
+        )
         session = service.create_session(agent_id="test-agent", duration_hours=4)
 
         # Decode token (without verification, just to check structure)
@@ -1082,6 +1111,166 @@ def test_conflict_report_omits_unset_active_ai_model(tmp_path, monkeypatch):
     assert result["status"] == "success"
     call_kwargs = client.answer.generate.call_args.kwargs
     assert "ai_model" not in call_kwargs
+
+
+class TestServerConfigUrl:
+    """Regression tests for local REST API URL formatting."""
+
+    def test_server_url_defaults_to_http_for_host_and_port(self, tmp_path):
+        """Ensure host and port configs default to an HTTP URL."""
+        from memanto.cli.config.manager import ConfigManager
+
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.set_server_config("localhost", 8000)
+
+        assert manager.get_server_url() == "http://localhost:8000"
+
+    def test_server_url_preserves_configured_scheme(self, tmp_path):
+        """Ensure configured HTTP or HTTPS schemes are preserved."""
+        from memanto.cli.config.manager import ConfigManager
+
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.set_server_config("https://memanto.example", 443)
+
+        assert manager.get_server_url() == "https://memanto.example:443"
+
+    def test_server_url_does_not_duplicate_explicit_url_port(self, tmp_path):
+        """Ensure explicit URL ports are not duplicated."""
+        from memanto.cli.config.manager import ConfigManager
+
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.set_server_config("https://memanto.example:9443", 443)
+
+        assert manager.get_server_url() == "https://memanto.example:9443"
+
+    @pytest.mark.parametrize(
+        "bad_url", ["http://localhost:abc", "http://localhost:999999"]
+    )
+    def test_server_url_falls_back_when_explicit_url_port_is_malformed(
+        self, tmp_path, bad_url
+    ):
+        """Ensure malformed explicit URL ports fall back to the configured port."""
+        from memanto.cli.config.manager import ConfigManager
+
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.set_server_config(bad_url, 8000)
+
+        assert manager.get_server_url() == "http://localhost:8000"
+
+
+class TestServerConfigValidation:
+    """Regression tests for local REST API server config validation."""
+
+    def test_set_server_config_persists_integer_port(self, tmp_path):
+        from memanto.cli.config.manager import ConfigManager
+
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.set_server_config("localhost", "8000")
+
+        assert manager.get_server_config()["port"] == 8000
+
+    @pytest.mark.parametrize("invalid_port", [0, 65536, "abc", 1.5, True])
+    def test_set_server_config_rejects_invalid_port(self, tmp_path, invalid_port):
+        from memanto.cli.config.manager import ConfigManager
+
+        manager = ConfigManager(config_dir=tmp_path)
+
+        with pytest.raises(ValueError, match="server port"):
+            manager.set_server_config("localhost", invalid_port)
+
+
+class TestSessionConfigValidation:
+    """Regression tests for user-editable session config."""
+
+    def test_set_session_config_normalizes_integer_fields(self, tmp_path):
+        from memanto.cli.config.manager import ConfigManager
+
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.set_session_config(
+            {
+                "default_duration_hours": "12",
+                "extend_threshold_minutes": "45",
+                "auto_renew_enabled": False,
+            }
+        )
+
+        session = manager.get_session_config()
+        assert session["default_duration_hours"] == 12
+        assert session["extend_threshold_minutes"] == 45
+        assert session["auto_renew_enabled"] is False
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("default_duration_hours", 0),
+            ("default_duration_hours", 169),
+            ("extend_threshold_minutes", "abc"),
+            ("warn_before_expiry_minutes", 1.5),
+            ("auto_renew_interval_hours", True),
+            ("auto_extend", "false"),
+            ("unexpected", 1),
+        ],
+    )
+    def test_set_session_config_rejects_invalid_values(self, tmp_path, key, value):
+        from memanto.cli.config.manager import ConfigManager
+
+        manager = ConfigManager(config_dir=tmp_path)
+
+        with pytest.raises(ValueError):
+            manager.set_session_config({key: value})
+
+    def test_set_session_config_rejects_corrupt_stored_session(self, tmp_path):
+        from memanto.cli.config.manager import ConfigManager
+
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.save_yaml({"session": "bad"})
+
+        with pytest.raises(ValueError, match="stored session config must be an object"):
+            manager.set_session_config({"default_duration_hours": 12})
+
+        assert manager.load_yaml()["session"] == "bad"
+
+
+class TestAnswerConfigValidation:
+    """Regression tests for user-editable answer config."""
+
+    def test_set_answer_config_normalizes_numeric_values(self, tmp_path):
+        from memanto.cli.config.manager import ConfigManager
+
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.set_answer_config(
+            temperature="0.2",
+            answer_limit="20",
+            threshold="0.4",
+            kiosk_mode=True,
+        )
+
+        answer = manager.get_answer_config()
+        assert answer["temperature"] == 0.2
+        assert answer["answer_limit"] == 20
+        assert answer["threshold"] == 0.4
+        assert answer["kiosk_mode"] is True
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("temperature", -0.1),
+            ("temperature", 2.1),
+            ("answer_limit", 0),
+            ("answer_limit", 51),
+            ("answer_limit", 1.5),
+            ("threshold", -0.1),
+            ("threshold", 1.1),
+            ("kiosk_mode", "false"),
+        ],
+    )
+    def test_set_answer_config_rejects_invalid_values(self, tmp_path, field, value):
+        from memanto.cli.config.manager import ConfigManager
+
+        manager = ConfigManager(config_dir=tmp_path)
+
+        with pytest.raises(ValueError, match=field):
+            manager.set_answer_config(**{field: value})
 
 
 if __name__ == "__main__":

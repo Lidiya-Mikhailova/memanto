@@ -29,6 +29,25 @@ def _validate_filter_token(value: Any, field_name: str) -> str:
     return token
 
 
+def _coerce_timestamp_str(value: Any) -> Any:
+    """Return a timestamp field as an ISO string, tolerating raw epoch numbers.
+
+    MemoryRecord always writes ISO strings, but a namespace can contain
+    documents written outside Memanto's own store path (manual test data,
+    other tools sharing the namespace) with a raw Unix-epoch number instead.
+    The response model requires a string, so coerce here rather than let
+    FastAPI's response serialization 500 on the whole recall.
+    """
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(value, tz=timezone.utc).isoformat()
+        except (OverflowError, OSError, ValueError):
+            return None
+    return value
+
+
 # Moorcheh caps a single similarity search at 100 rows.
 MOORCHEH_MAX_TOP_K = 100
 # When post-retrieval filters (temporal / confidence) are active we widen
@@ -843,9 +862,9 @@ class MemoryReadService:
             "confidence": get_field("confidence"),
             "status": get_field("status"),
             "tags": tags,
-            "created_at": get_field("created_at"),
-            "updated_at": get_field("updated_at"),
-            "expires_at": get_field("expires_at"),
+            "created_at": _coerce_timestamp_str(get_field("created_at")),
+            "updated_at": _coerce_timestamp_str(get_field("updated_at")),
+            "expires_at": _coerce_timestamp_str(get_field("expires_at")),
             "ttl_seconds": get_field("ttl_seconds"),
             "actor_id": get_field("actor_id"),
             "source": get_field("source"),

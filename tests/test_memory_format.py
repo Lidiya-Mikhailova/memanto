@@ -215,3 +215,50 @@ def test_content_with_tags_line_and_real_tags_keeps_content_intact():
         f"Inline Tags: line was incorrectly stripped: {formatted['content']!r}"
     )
     assert formatted["tags"] == ["real-tag"]
+
+
+def test_format_memory_item_coerces_epoch_timestamps_to_iso_strings():
+    """
+    Documents written outside Memanto's own store path (e.g. manual test
+    data sharing a namespace) can carry raw Unix-epoch numbers instead of
+    ISO strings for created_at/updated_at. The MemoryItem response model
+    requires a string, so a raw int previously made FastAPI's response
+    serialization raise ResponseValidationError and 500 the whole recall.
+    """
+    document = {
+        "id": "mem-legacy",
+        "text": "[FACT] Legacy\n\nImported without ISO timestamps",
+        "metadata": {
+            "memory_type": "fact",
+            "created_at": 1778461885,
+            "updated_at": 1778461885,
+        },
+    }
+
+    formatted = MemoryReadService._format_memory_item(
+        MemoryReadService(MagicMock()), document
+    )
+
+    assert isinstance(formatted["created_at"], str)
+    assert isinstance(formatted["updated_at"], str)
+    assert formatted["created_at"] == "2026-05-11T01:11:25+00:00"
+
+
+def test_format_memory_item_preserves_iso_string_timestamps():
+    """Normal ISO string timestamps must pass through unchanged."""
+    document = {
+        "id": "mem-normal",
+        "text": "[FACT] Normal\n\nWritten via Memanto",
+        "metadata": {
+            "memory_type": "fact",
+            "created_at": "2026-05-11T01:11:25+00:00",
+            "updated_at": "2026-05-11T01:11:25+00:00",
+        },
+    }
+
+    formatted = MemoryReadService._format_memory_item(
+        MemoryReadService(MagicMock()), document
+    )
+
+    assert formatted["created_at"] == "2026-05-11T01:11:25+00:00"
+    assert formatted["updated_at"] == "2026-05-11T01:11:25+00:00"

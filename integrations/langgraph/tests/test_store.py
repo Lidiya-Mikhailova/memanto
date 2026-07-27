@@ -470,7 +470,6 @@ def test_do_search_recovers_key_from_comma_separated_tags(mock_sdk_client):
     assert len(items) == 1
     assert items[0].key == "key2"
     assert items[0].value["tags"] == ["urgent"]
->>>>>>> origin/integrations/merge-prs
 
 
 def test_batch_execution(mock_sdk_client):
