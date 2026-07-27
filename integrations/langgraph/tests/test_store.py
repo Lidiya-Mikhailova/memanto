@@ -341,6 +341,78 @@ def test_do_search_semantic(mock_sdk_client):
     )
 
 
+def test_do_search_filters_min_confidence_without_changing_similarity(
+    mock_sdk_client,
+):
+    store = MemantoStore(api_key="test_key")
+    client_instance = MagicMock()
+    mock_sdk_client.return_value = client_instance
+
+    client_instance.recall.return_value = {
+        "memories": [
+            {
+                "id": "mem-high",
+                "tags": ["lg:key:key-high"],
+                "type": "fact",
+                "content": "high confidence",
+                "confidence": 0.95,
+            },
+            {
+                "id": "mem-low",
+                "tags": ["lg:key:key-low"],
+                "type": "fact",
+                "content": "low confidence",
+                "confidence": 0.4,
+            },
+        ]
+    }
+
+    op = SearchOp(
+        namespace_prefix=("my_ns",),
+        query="test query",
+        filter={"min_confidence": 0.9, "min_similarity": 0.2},
+        limit=10,
+    )
+    items = store._do_search(op)
+
+    assert [item.key for item in items] == ["key-high"]
+    client_instance.recall.assert_called_once_with(
+        agent_id="langgraph_my_ns",
+        query="test query",
+        limit=10,
+        type=None,
+        tags=None,
+        min_similarity=0.2,
+    )
+
+
+def test_do_search_min_confidence_zero_keeps_legacy_memories(mock_sdk_client):
+    store = MemantoStore(api_key="test_key")
+    client_instance = MagicMock()
+    mock_sdk_client.return_value = client_instance
+
+    client_instance.recall_recent.return_value = {
+        "memories": [
+            {
+                "id": "legacy-memory",
+                "tags": ["lg:key:legacy"],
+                "type": "fact",
+                "content": "stored before confidence existed",
+            }
+        ]
+    }
+
+    op = SearchOp(
+        namespace_prefix=("my_ns",),
+        query="*",
+        filter={"min_confidence": 0.0},
+        limit=10,
+    )
+    items = store._do_search(op)
+
+    assert [item.key for item in items] == ["legacy"]
+
+
 def test_do_search_accepts_string_tag_filter(mock_sdk_client):
     store = MemantoStore(api_key="test_key")
     client_instance = MagicMock()
@@ -398,6 +470,7 @@ def test_do_search_recovers_key_from_comma_separated_tags(mock_sdk_client):
     assert len(items) == 1
     assert items[0].key == "key2"
     assert items[0].value["tags"] == ["urgent"]
+>>>>>>> origin/integrations/merge-prs
 
 
 def test_batch_execution(mock_sdk_client):
