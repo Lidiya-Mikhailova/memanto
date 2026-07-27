@@ -6,6 +6,7 @@ Uses the official moorcheh_sdk to interact with Moorcheh API.
 
 import json
 import logging
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -114,10 +115,10 @@ class SdkClient:
         either way.
         """
         if self._moorcheh is None:
-            from memanto.app.clients.moorcheh import get_moorcheh_client
+            from memanto.app.clients.moorcheh import moorcheh_client
 
             logger.debug("Initializing Moorcheh client via backend dispatcher")
-            self._moorcheh = get_moorcheh_client()
+            self._moorcheh = moorcheh_client.get_client(api_key=self.api_key)
         return self._moorcheh
 
     def _get_write_service(self):
@@ -263,6 +264,12 @@ class SdkClient:
             ValueError: If *pattern* is invalid.
             AgentAlreadyExistsError: If agent already exists.
         """
+        if not agent_id:
+            raise ValueError("agent_id must not be empty")
+        if not re.fullmatch(r"^[a-zA-Z0-9_-]+$", agent_id):
+            raise ValueError(
+                f"Invalid agent_id: '{agent_id}'. Only alphanumeric characters, hyphens, and underscores are allowed."
+            )
         if pattern not in _VALID_PATTERNS:
             raise ValueError(
                 f"Invalid pattern '{pattern}'. Must be one of: {', '.join(sorted(_VALID_PATTERNS))}"

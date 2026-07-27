@@ -140,12 +140,16 @@ class AnswerResult(BaseModel):
 
 
 class BatchRememberItemResult(BaseModel):
+    """Result for one item in a batch memory write."""
+
     id: str | None = None
     status: str
     error: str | None = None
 
 
 class BatchRememberResult(BaseModel):
+    """Response returned by the batch_remember MCP tool."""
+
     status: str
     agent_id: str
     namespace: str | None = None
@@ -157,6 +161,8 @@ class BatchRememberResult(BaseModel):
 
 
 class AgentInfoResult(BaseModel):
+    """Agent metadata returned by MCP admin tools."""
+
     status: str
     agent_id: str | None = None
     namespace: str | None = None
@@ -167,6 +173,8 @@ class AgentInfoResult(BaseModel):
 
 
 class AgentListResult(BaseModel):
+    """Collection response for listing Memanto agents."""
+
     status: str
     count: int = 0
     agents: list[dict[str, Any]] = Field(default_factory=list)
@@ -326,14 +334,16 @@ def register_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
         ] = "mcp-agent",
         agent_id: AgentIdField = None,
     ) -> RememberResult:
+        """Store a single memory for the resolved agent."""
         try:
-            resolved = lifecycle.ensure_ready(lifecycle.resolve_agent_id(agent_id))
+            resolved = lifecycle.resolve_agent_id(agent_id)
+            client = lifecycle.ensure_ready(resolved)
             resolved_title = title or (
                 content[: _MAX_TITLE_LENGTH - 3] + "..."
                 if len(content) > _MAX_TITLE_LENGTH
                 else content
             )
-            result = lifecycle.client.remember(
+            result = client.remember(
                 agent_id=resolved,
                 memory_type=type,
                 title=resolved_title,
@@ -387,8 +397,9 @@ def register_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
         ],
         agent_id: AgentIdField = None,
     ) -> BatchRememberResult:
+        """Validate and store multiple memories for the resolved agent."""
         try:
-            resolved = lifecycle.ensure_ready(lifecycle.resolve_agent_id(agent_id))
+            resolved = lifecycle.resolve_agent_id(agent_id)
             # Validate before round-trip so we fail fast with a clear error.
             normalized_memories: list[dict[str, Any]] = []
             for i, item in enumerate(memories):
@@ -416,7 +427,8 @@ def register_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
                 normalized_item["tags"] = _normalize_tags(item.get("tags"))
                 normalized_memories.append(normalized_item)
 
-            result = lifecycle.client.batch_remember(
+            client = lifecycle.ensure_ready(resolved)
+            result = client.batch_remember(
                 agent_id=resolved,
                 memories=normalized_memories,
             )
@@ -493,9 +505,11 @@ def register_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
         ] = None,
         agent_id: AgentIdField = None,
     ) -> RecallResult:
+        """Search memories semantically for the resolved agent."""
         try:
-            resolved = lifecycle.ensure_ready(lifecycle.resolve_agent_id(agent_id))
-            result = lifecycle.client.recall(
+            resolved = lifecycle.resolve_agent_id(agent_id)
+            client = lifecycle.ensure_ready(resolved)
+            result = client.recall(
                 agent_id=resolved,
                 query=query,
                 limit=limit,
@@ -547,9 +561,11 @@ def register_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
         ] = None,
         agent_id: AgentIdField = None,
     ) -> RecallResult:
+        """Return the most recent memories for the resolved agent."""
         try:
-            resolved = lifecycle.ensure_ready(lifecycle.resolve_agent_id(agent_id))
-            result = lifecycle.client.recall_recent(
+            resolved = lifecycle.resolve_agent_id(agent_id)
+            client = lifecycle.ensure_ready(resolved)
+            result = client.recall_recent(
                 agent_id=resolved,
                 limit=limit,
                 type=list(type) if type else None,
@@ -602,9 +618,11 @@ def register_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
         ] = None,
         agent_id: AgentIdField = None,
     ) -> RecallResult:
+        """Recall memories that were valid at a point in time."""
         try:
-            resolved = lifecycle.ensure_ready(lifecycle.resolve_agent_id(agent_id))
-            result = lifecycle.client.recall_as_of(
+            resolved = lifecycle.resolve_agent_id(agent_id)
+            client = lifecycle.ensure_ready(resolved)
+            result = client.recall_as_of(
                 agent_id=resolved,
                 as_of=as_of,
                 limit=limit,
@@ -658,9 +676,11 @@ def register_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
         ] = None,
         agent_id: AgentIdField = None,
     ) -> RecallResult:
+        """Recall memories changed after the supplied timestamp."""
         try:
-            resolved = lifecycle.ensure_ready(lifecycle.resolve_agent_id(agent_id))
-            result = lifecycle.client.recall_changed_since(
+            resolved = lifecycle.resolve_agent_id(agent_id)
+            client = lifecycle.ensure_ready(resolved)
+            result = client.recall_changed_since(
                 agent_id=resolved,
                 since=since,
                 limit=limit,
@@ -733,9 +753,11 @@ def register_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
         ] = False,
         agent_id: AgentIdField = None,
     ) -> AnswerResult:
+        """Answer a question using memories from the resolved agent."""
         try:
-            resolved = lifecycle.ensure_ready(lifecycle.resolve_agent_id(agent_id))
-            result = lifecycle.client.answer(
+            resolved = lifecycle.resolve_agent_id(agent_id)
+            client = lifecycle.ensure_ready(resolved)
+            result = client.answer(
                 agent_id=resolved,
                 question=question,
                 limit=limit,
@@ -799,6 +821,7 @@ def _register_admin_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
             Field(default=None, description="Optional human-readable description."),
         ] = None,
     ) -> AgentInfoResult:
+        """Create a Memanto agent through the admin client."""
         try:
             agent = lifecycle.client.create_agent(
                 agent_id=agent_id, pattern=pattern, description=description
@@ -830,6 +853,7 @@ def _register_admin_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
         description="List every Memanto agent visible to the current API key.",
     )
     def list_agents() -> AgentListResult:
+        """List available Memanto agents through the admin client."""
         try:
             agents = lifecycle.client.list_agents()
             return AgentListResult(status="ok", count=len(agents), agents=agents)
@@ -846,6 +870,7 @@ def _register_admin_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
             str, Field(description="Agent id to look up.", min_length=1)
         ],
     ) -> AgentInfoResult:
+        """Fetch one Memanto agent by identifier."""
         try:
             agent = lifecycle.client.get_agent(agent_id)
             return AgentInfoResult(
@@ -881,6 +906,7 @@ def _register_admin_tools(mcp: Any, lifecycle: MemantoLifecycle) -> None:
             str, Field(description="Agent id to delete.", min_length=1)
         ],
     ) -> AgentInfoResult:
+        """Delete one Memanto agent by identifier."""
         try:
             lifecycle.client.delete_agent(agent_id)
             return AgentInfoResult(status="ok", agent_id=agent_id, message="deleted")
