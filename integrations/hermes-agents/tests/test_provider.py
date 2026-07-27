@@ -15,7 +15,6 @@ from hermes_memanto.provider import (
     _detect_memory_type,
     _format_recall_block,
     _load_memanto_config,
-    _sanitize_agent_id,
     _save_memanto_config,
 )
 
@@ -125,23 +124,6 @@ def test_is_available_false_when_import_missing(monkeypatch):
 # -- Helpers ------------------------------------------------------------------
 
 
-def test_sanitize_agent_id_coerces_charset():
-    assert _sanitize_agent_id("Hermes Coder!@#") == "Hermes-Coder"
-    assert _sanitize_agent_id("") == "hermes"
-    long_id = _sanitize_agent_id("a" * 100)
-    assert len(long_id) == 64
-    assert long_id.startswith("a" * 53 + "-")
-
-
-def test_sanitize_agent_id_avoids_truncation_collisions():
-    first = _sanitize_agent_id("hermes-" + "a" * 80)
-    second = _sanitize_agent_id("hermes-" + "a" * 79 + "b")
-
-    assert first != second
-    assert len(first) <= 64
-    assert len(second) <= 64
-
-
 def test_detect_memory_type():
     assert _detect_memory_type("User prefers dark mode") == "preference"
     assert _detect_memory_type("We decided to use Postgres") == "decision"
@@ -158,13 +140,6 @@ def test_load_and_save_config_round_trip(tmp_path):
     assert cfg["auto_capture"] is False
     assert cfg["auto_recall"] is True
     assert cfg["pattern"] == "tool"
-
-
-def test_save_config_sanitizes_concrete_agent_id(tmp_path):
-    p = MemantoMemoryProvider()
-    p.save_config({"agent_id": "My Agent!"}, str(tmp_path))
-    cfg = _load_memanto_config(str(tmp_path))
-    assert cfg["agent_id"] == "My-Agent"
 
 
 def test_save_config_preserves_identity_template(tmp_path):

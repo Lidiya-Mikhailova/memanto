@@ -138,20 +138,6 @@ def _as_bool(value: Any, default: bool) -> bool:
     return default
 
 
-def _sanitize_agent_id(raw: str) -> str:
-    """Coerce to Memanto's id charset (letters, digits, ``-``, ``_``)."""
-    cleaned = re.sub(r"[^a-zA-Z0-9_-]", "-", raw or "")
-    cleaned = re.sub(r"-+", "-", cleaned).strip("-")
-    if not cleaned:
-        return "hermes"
-    if len(cleaned) <= _MAX_AGENT_ID_LENGTH:
-        return cleaned
-
-    digest = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:10]
-    prefix_len = _MAX_AGENT_ID_LENGTH - len(digest) - 1
-    prefix = cleaned[:prefix_len].rstrip("-_") or "hermes"
-    return f"{prefix}-{digest}"
-
 
 def _detect_memory_type(text: str) -> str:
     lowered = text.lower()
@@ -529,8 +515,7 @@ class MemantoMemoryProvider(MemoryProvider):
         sanitized = dict(values or {})
         sanitized.pop("api_key", None)
         # Keep the {identity} template intact; only sanitize concrete ids.
-        if "agent_id" in sanitized and "{identity}" not in str(sanitized["agent_id"]):
-            sanitized["agent_id"] = _sanitize_agent_id(str(sanitized["agent_id"]))
+        
         if "pattern" in sanitized:
             pattern = str(sanitized["pattern"]).strip().lower()
             sanitized["pattern"] = (
@@ -548,7 +533,7 @@ class MemantoMemoryProvider(MemoryProvider):
         raw_id = (
             os.environ.get("MEMANTO_AGENT_ID", "").strip() or self._config["agent_id"]
         )
-        self._agent_id = _sanitize_agent_id(raw_id.replace("{identity}", identity))
+        self._agent_id = raw_id.replace("{identity}", identity)
 
         self._auto_recall = self._config["auto_recall"]
         self._auto_capture = self._config["auto_capture"]
