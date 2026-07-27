@@ -458,7 +458,7 @@ class TestMemoryWriteServiceDelete:
             "scope_type": "agent",
             "scope_id": "test-agent",
             "actor_id": "tester",
-            "source": "manual",
+            "source": "system",
             "confidence": 0.8,
             "status": "active",
             "tags": [],
@@ -512,6 +512,36 @@ class TestMemoryWriteServiceDelete:
         uploaded = client.documents.upload.call_args.kwargs["documents"][0]
         assert uploaded.get("original_id") == "orig-123"
         assert "validation_count" not in uploaded
+
+    def test_update_memory_normalizes_legacy_source_values(self):
+        from memanto.app.services.memory_write_service import MemoryWriteService
+
+        client = MagicMock()
+        client.documents.upload.return_value = {"status": "queued"}
+        existing_memory = {
+            "id": "mem-1",
+            "type": "fact",
+            "title": "Title",
+            "content": "Content",
+            "actor_id": "tester",
+            "source": "manual",  # legacy value
+            "confidence": 0.8,
+            "status": "active",
+        }
+
+        with patch(
+            "memanto.app.services.memory_read_service.MemoryReadService.get_memory",
+            return_value=existing_memory,
+        ):
+            MemoryWriteService(client).update_memory(
+                "mem-1",
+                "memanto_agent_test",
+                {"title": "New title"},
+            )
+
+        uploaded = client.documents.upload.call_args.kwargs["documents"][0]
+        # Should normalize 'manual' (invalid SourceType) to 'system'
+        assert uploaded.get("source") == "system"
 
 
 class TestMemoryReadServiceFormatting:
@@ -569,14 +599,14 @@ class TestMemoryWriteServiceBatch:
                 content="Alex prefers concise status updates.",
                 agent_id="agent-1",
                 actor_id="user-1",
-                source="test",
+                source="system",
             ),
             MemoryRecord(
                 title="Second preference",
                 content="Alex prefers weekly summaries.",
                 agent_id="agent-1",
                 actor_id="user-1",
-                source="test",
+                source="system",
             ),
         ]
 
@@ -598,7 +628,7 @@ class TestMemoryWriteServiceBatch:
                 content="This write should be counted as failed.",
                 agent_id="agent-1",
                 actor_id="user-1",
-                source="test",
+                source="system",
             )
         ]
 
@@ -863,7 +893,7 @@ class TestMemoryWriteServiceTimestamps:
             content="Original imported memory",
             agent_id="test-agent",
             actor_id="test-agent",
-            source="mem0",
+            source="system",
             provenance="imported",
             created_at=source_created,
         )
@@ -1319,6 +1349,23 @@ class TestValidateSafeId:
         assert not (tmp_path / "etc").exists()
 
 
+def test_memory_edit_rejects_oversized_source():
+    from pydantic import ValidationError
+
+    from memanto.app.routes.memory import MemoryEditRequest
+
+    with pytest.raises(ValidationError):
+        MemoryEditRequest(source="x" * 129)
+
+
+def test_memory_edit_strips_valid_tags():
+    from memanto.app.routes.memory import MemoryEditRequest
+
+    request = MemoryEditRequest(tags=[" project ", "important"])
+
+    assert request.tags == ["project", "important"]
+
+
 def test_format_memory_item_tag_stripping():
     from unittest.mock import MagicMock
 
@@ -1347,7 +1394,7 @@ def test_to_moorcheh_document_handles_string_expires_at():
         content="Expires at is a string",
         agent_id="test-agent",
         actor_id="user",
-        source="test",
+        source="system",
     )
     memory.expires_at = "2026-07-10T00:00:00"
 
