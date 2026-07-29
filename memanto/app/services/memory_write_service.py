@@ -252,13 +252,16 @@ class MemoryWriteService:
             rejected = 0
             for r in results:
                 status = str(r["status"]).lower()
-                action = str(r.get("action", "")).lower()
                 if status in SUCCESSFUL_UPLOAD_STATUSES:
                     successful += 1
-                elif status == "rejected" or action == "rejected":
+                elif status == "rejected":
                     rejected += 1
                 else:
-                    # Absorb any non-standard upload statuses into failed
+                    # Validation failures carry status="failed"/action="rejected"
+                    # and must stay in `failed`: the batch endpoints return only
+                    # successful/failed (see routes/memory.py), so counting them
+                    # as `rejected` would drop them from the response entirely.
+                    # Non-standard upload statuses are absorbed here too.
                     failed += 1
                     r["status"] = "failed"
 
