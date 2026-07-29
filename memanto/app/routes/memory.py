@@ -46,6 +46,7 @@ from memanto.app.utils.errors import (
     MemoryError,
     map_error_to_http_exception,
 )
+from memanto.app.utils.temporal_helpers import END_OF_DAY, is_date_only
 from memanto.app.utils.validation import (
     CostGuard,
     is_successful_write_result,
@@ -142,19 +143,20 @@ class RecallRequest(BaseModel):
 
 
 def _parse_recall_temporal_bound(v: object, *, end_of_day: bool) -> datetime:
-    # End-of-day must be time.max (23:59:59.999999), matching
+    # End-of-day must be END_OF_DAY (23:59:59.999999), matching
     # parse_as_of_timestamp: the temporal filter compares with a strict `>`,
     # so a 23:59:59 bound silently drops memories created in the final
-    # sub-second of the requested day.
+    # sub-second of the requested day. Date-only detection is delegated to the
+    # shared helper for the same reason as RecallAsOfRequest.parse_as_of.
     if isinstance(v, datetime):
         return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
     if isinstance(v, date):
-        boundary = time.max if end_of_day else time(0, 0, 0)
+        boundary = END_OF_DAY if end_of_day else time(0, 0, 0)
         return datetime.combine(v, boundary, tzinfo=timezone.utc)
     if isinstance(v, str):
-        if "T" not in v and " " not in v:
+        if is_date_only(v):
             try:
-                boundary = time.max if end_of_day else time(0, 0, 0)
+                boundary = END_OF_DAY if end_of_day else time(0, 0, 0)
                 return datetime.combine(
                     date.fromisoformat(v), boundary, tzinfo=timezone.utc
                 )
@@ -194,14 +196,14 @@ class RecallAsOfRequest(BaseModel):
         if isinstance(v, datetime):
             return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
         if isinstance(v, date):
-            return datetime.combine(v, time.max, tzinfo=timezone.utc)
+            return datetime.combine(v, END_OF_DAY, tzinfo=timezone.utc)
         if isinstance(v, str):
-            # Date-only (no time component) → end of day (time.max, matching
-            # parse_as_of_timestamp — see _parse_recall_temporal_bound)
-            if "T" not in v and " " not in v:
+            # Date-only (no time component) → end of day. Delegated to the shared
+            # helper so this route and the read service cannot drift apart.
+            if is_date_only(v):
                 try:
                     return datetime.combine(
-                        date.fromisoformat(v), time.max, tzinfo=timezone.utc
+                        date.fromisoformat(v), END_OF_DAY, tzinfo=timezone.utc
                     )
                 except ValueError:
                     pass
