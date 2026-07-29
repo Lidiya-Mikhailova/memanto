@@ -18,7 +18,7 @@ def _formatted_memory_with_source_ref():
         content="This memory came from an external document.",
         agent_id="test-agent",
         actor_id="user",
-        source="document",
+        source="system",
         source_ref="document://guide/section-2",
     )
 
