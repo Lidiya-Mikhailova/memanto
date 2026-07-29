@@ -30,8 +30,6 @@ _REMOVED_TRUST_FIELDS = frozenset(
     }
 )
 
-_SUCCESSFUL_UPLOAD_STATUSES = {"queued", "success", "ok"}
-
 
 class MemoryWriteService:
     """Persist memory records to Moorcheh-backed namespaces."""
@@ -239,7 +237,7 @@ class MemoryWriteService:
                 moorcheh_status = str(upload_result.get("status", "unknown")).lower()
                 for result in results:
                     if result["status"] == "pending":
-                        if moorcheh_status in _SUCCESSFUL_UPLOAD_STATUSES:
+                        if moorcheh_status in SUCCESSFUL_UPLOAD_STATUSES:
                             result["status"] = moorcheh_status
                         else:
                             result["status"] = "failed"
@@ -249,18 +247,19 @@ class MemoryWriteService:
 
             # Count successes, failures, and namespace-rejected items separately
             # so that successful + failed + rejected == total_submitted always.
-            _known = set(SUCCESSFUL_UPLOAD_STATUSES) | {"failed", "rejected"}
-            successful = sum(
-                1
-                for r in results
-                if str(r["status"]).lower() in SUCCESSFUL_UPLOAD_STATUSES
-            )
-            failed = sum(1 for r in results if str(r["status"]).lower() == "failed")
-            rejected = sum(1 for r in results if str(r["status"]).lower() == "rejected")
-            # Absorb any non-standard upload statuses into failed so the invariant holds
-            failed += len(results) - successful - failed - rejected
+            successful = 0
+            failed = 0
+            rejected = 0
             for r in results:
-                if str(r["status"]).lower() not in _known:
+                status = str(r["status"]).lower()
+                action = str(r.get("action", "")).lower()
+                if status in SUCCESSFUL_UPLOAD_STATUSES:
+                    successful += 1
+                elif status == "rejected" or action == "rejected":
+                    rejected += 1
+                else:
+                    # Absorb any non-standard upload statuses into failed
+                    failed += 1
                     r["status"] = "failed"
 
             return {
