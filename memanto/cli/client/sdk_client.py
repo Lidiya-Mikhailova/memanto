@@ -1410,34 +1410,44 @@ class SdkClient:
             limit_per_type: Max memories per type for fresh export (default 25).
 
         Returns:
-            Dict with ``output_path``, ``total_memories``, ``source``.
+            Dict with ``output_path``, ``total_memories``, ``source``
+            (``"cache"``, ``"fresh"``, or ``"stale-cache"`` if a refresh
+            failed and a previous export was reused instead).
         """
         cache_path = get_data_dir() / "exports" / f"{agent_id}_memory.md"
         target_path = Path(project_dir) / "MEMORY.md"
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
+        try:
+            # Run export function first (ensures active backend's exports/... is fresh)
+            self.export_memory_md(agent_id=agent_id, limit_per_type=limit_per_type)
+        except ConnectionError:
+            if cache_path.exists():
+                # Backend unreachable, but we have a previously good export —
+                # serve that instead of wiping the project's MEMORY.md.
+                shutil.copy2(str(cache_path), str(target_path))
+                content = cache_path.read_text(encoding="utf-8")
+                mem_count = content.count("### ")
+                return {
+                    "output_path": str(target_path.resolve()),
+                    "total_memories": mem_count,
+                    "source": "stale-cache",
+                }
+            raise
+
         if cache_path.exists():
-            # Fast path: copy cached export without an API-backed refresh.
             shutil.copy2(str(cache_path), str(target_path))
             content = cache_path.read_text(encoding="utf-8")
             mem_count = content.count("### ")
             return {
                 "output_path": str(target_path.resolve()),
                 "total_memories": mem_count,
-                "source": "cache",
+                "source": "fresh",
             }
-
-        export_result = self.export_memory_md(
-            agent_id=agent_id,
-            limit_per_type=limit_per_type,
-        )
-        exported_path = Path(export_result["output_path"])
-        if exported_path.exists():
-            shutil.copy2(str(exported_path), str(target_path))
 
         return {
             "output_path": str(target_path.resolve()),
-            "total_memories": export_result.get("total_memories", 0),
+            "total_memories": 0,
             "source": "fresh",
         }
 

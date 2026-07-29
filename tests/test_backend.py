@@ -203,18 +203,25 @@ class TestExportDataDirRouting:
         for client_cls in (DirectClient, SdkClient):
             client = client_cls(api_key="dummy-key")
             export_calls = []
-            monkeypatch.setattr(
-                client,
-                "export_memory_md",
-                lambda export_calls=export_calls, **kwargs: export_calls.append(kwargs)
-                or {"output_path": str(on_prem_cache)},
-            )
+            
+            def mock_export(export_calls=export_calls, cls=client_cls, **kwargs):
+                export_calls.append(kwargs)
+                if cls == SdkClient:
+                    raise ConnectionError("Backend down")
+                return {"output_path": str(on_prem_cache)}
+
+            monkeypatch.setattr(client, "export_memory_md", mock_export)
             project_dir = tmp_path / "projects" / client_cls.__name__
 
             result = client.sync_memory_to_project("agent-1", str(project_dir))
 
-            assert result["source"] == "cache"
-            assert not export_calls
+            if client_cls == DirectClient:
+                assert result["source"] == "cache"
+                assert not export_calls
+            else:
+                assert result["source"] == "stale-cache"
+                assert len(export_calls) == 1
+
             assert (project_dir / "MEMORY.md").read_text(encoding="utf-8") == (
                 "# on-prem export"
             )
