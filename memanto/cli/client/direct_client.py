@@ -47,6 +47,7 @@ from memanto.app.utils.validation import (
     InputLimits,
     is_successful_write_result,
     validate_recall_limit,
+    validate_safe_id,
 )
 from memanto.cli.config.manager import ConfigManager
 
@@ -1591,6 +1592,7 @@ class DirectClient:
             (``"cache"`` or ``"fresh"``).
         """
 
+        validate_safe_id(agent_id, "agent_id")
         cache_path = get_data_dir() / "exports" / f"{agent_id}_memory.md"
         target_path = Path(project_dir) / "MEMORY.md"
         target_path.parent.mkdir(parents=True, exist_ok=True)

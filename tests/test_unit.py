@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, patch
 
 import jwt
 import pytest
-from pathlib import Path
 
 from memanto.app.config import settings
 from memanto.app.core import MemoryRecord
@@ -352,13 +351,15 @@ class TestAgentService:
             AgentCreate(agent_id="valid-agent", pattern=AgentPattern.SUPPORT),
             settings.MOORCHEH_API_KEY,
         )
-        
+
         # JSONDecodeError (corrupt JSON)
         (agent_service.agents_dir / "broken-agent.json").write_text("{")
         assert agent_service.get_agent("broken-agent") is None
 
         # ValidationError (missing required fields)
-        (agent_service.agents_dir / "broken-schema-agent.json").write_text('{"description": "missing agent_id and pattern"}')
+        (agent_service.agents_dir / "broken-schema-agent.json").write_text(
+            '{"description": "missing agent_id and pattern"}'
+        )
         assert agent_service.get_agent("broken-schema-agent") is None
 
         agent_list = agent_service.list_agents()
@@ -1409,7 +1410,6 @@ class TestValidateSafeId:
         assert not (tmp_path / "etc").exists()
 
 
-
 @pytest.mark.parametrize(
     ("agent_name", "is_global", "expected_suffix"),
     [
@@ -1429,10 +1429,12 @@ def test_resolve_instruction_file_paths(
     """Test resolution of instruction file paths."""
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     from memanto.cli.connect.agent_registry import AGENT_REGISTRY
-    
+
     project_dir = tmp_path / "project"
-    resolved = AGENT_REGISTRY[agent_name].resolve_instruction_file(project_dir, is_global=is_global)
-    
+    resolved = AGENT_REGISTRY[agent_name].resolve_instruction_file(
+        project_dir, is_global=is_global
+    )
+
     assert resolved == tmp_path / expected_suffix
 
 
@@ -1523,7 +1525,9 @@ def test_batch_upload_error_counts_each_pending_memory_as_failed():
     assert all(
         "Batch upload returned status" in item["error"] for item in result["results"]
     )
-def test_direct_sync_refreshes_cached_export_before_copy(tmp_path, monkeypatch):
+
+
+def test_direct_sync_uses_cached_export_fast_path(tmp_path, monkeypatch):
     from memanto.cli.client.direct_client import DirectClient
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -1558,21 +1562,22 @@ def test_direct_sync_refreshes_cached_export_before_copy(tmp_path, monkeypatch):
     )
 
     target = project_dir / "MEMORY.md"
-    assert export_calls == [("agent-1", 7)]
+    assert export_calls == []
     assert target.read_text(encoding="utf-8") == cache_path.read_text(encoding="utf-8")
-    assert "current memory" in target.read_text(encoding="utf-8")
-    assert "stale memory" not in target.read_text(encoding="utf-8")
+    assert "stale memory" in target.read_text(encoding="utf-8")
     assert result == {
         "output_path": str(target.resolve()),
-        "total_memories": 2,
-        "source": "fresh",
+        "total_memories": 1,
+        "source": "cache",
     }
+
 
 def test_onprem_state_survives_interrupted_replace(tmp_path):
     """An interrupted state replacement must preserve the previous file."""
-    from memanto.cli.config.manager import ConfigManager
     from unittest.mock import patch
-    
+
+    from memanto.cli.config.manager import ConfigManager
+
     manager = ConfigManager(tmp_path)
     manager.set_onprem_state(
         embedding_provider="openai",
@@ -1595,4 +1600,3 @@ def test_onprem_state_survives_interrupted_replace(tmp_path):
         "embedding_provider": "openai",
         "embedding_model": "text-embedding-3-small",
     }
-

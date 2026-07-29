@@ -44,6 +44,7 @@ from memanto.app.utils.validation import (
     InputLimits,
     is_successful_write_result,
     validate_recall_limit,
+    validate_safe_id,
 )
 from memanto.cli.config.manager import ConfigManager
 
@@ -1449,6 +1450,7 @@ class SdkClient:
             (``"cache"``, ``"fresh"``, or ``"stale-cache"`` if a refresh
             failed and a previous export was reused instead).
         """
+        validate_safe_id(agent_id, "agent_id")
         cache_path = get_data_dir() / "exports" / f"{agent_id}_memory.md"
         target_path = Path(project_dir) / "MEMORY.md"
         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1466,7 +1468,9 @@ class SdkClient:
 
         try:
             # Run export function first (ensures ~/.memanto/exports/... is fresh)
-            export_result = self.export_memory_md(agent_id=agent_id, limit_per_type=limit_per_type)
+            export_result = self.export_memory_md(
+                agent_id=agent_id, limit_per_type=limit_per_type
+            )
         except ConnectionError:
             if cache_path.exists():
                 # Backend unreachable, but we have a previously good export —
