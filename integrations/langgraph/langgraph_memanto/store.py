@@ -107,6 +107,7 @@ class MemantoStore(BaseStore):
         """Initialize MemantoStore with an API key."""
         self.api_key = api_key
         self._lock = threading.RLock()
+        self._key_locks: dict[tuple[tuple[str, ...], str], threading.Lock] = {}
         self._client_pool: dict[str, SdkClient] = {}
         self._agent_prefix = "langgraph_"
         # (namespace, query, limit, tags, type, min_sim, min_conf) -> (timestamp, items)
@@ -255,44 +256,52 @@ class MemantoStore(BaseStore):
         all_tags = user_tags + [self._key_to_tag(op.key)]
 
         client, agent_id = self._ensure_client(op.namespace)
-        existing = self._do_get(
-            GetOp(namespace=op.namespace, key=op.key), strict=True
-        )
-        existing_id = existing.value.get("memory_id") if existing else None
 
-        if existing_id:
-            updates: dict[str, Any] = {
-                "title": title,
-                "content": str(raw_content),
-                "confidence": confidence,
-                "tags": all_tags,
-                "source": "langgraph-store",
-            }
-            if memory_type is not None:
-                updates["type"] = memory_type
-            client.update_memory(
-                agent_id=agent_id,
-                memory_id=str(existing_id),
-                updates=updates,
-            )
-        else:
-            client.remember(
-                agent_id=agent_id,
-                memory_type=memory_type,
-                title=title,
-                content=str(raw_content),
-                confidence=confidence,
-                tags=all_tags,
-                source="langgraph-store",
-                provenance="explicit_statement",
-            )
+        lock_key = (op.namespace, op.key)
+        with self._lock:
+            if lock_key not in self._key_locks:
+                self._key_locks[lock_key] = threading.Lock()
+            key_lock = self._key_locks[lock_key]
 
-        # Invalidate cached searches for this namespace
+        with key_lock:
+            existing = self._do_get(
+                GetOp(namespace=op.namespace, key=op.key), strict=True
+            )
+            existing_id = existing.value.get("memory_id") if existing else None
+
+            if existing_id:
+                updates: dict[str, Any] = {
+                    "title": title,
+                    "content": str(raw_content),
+                    "confidence": confidence,
+                    "tags": all_tags,
+                    "source": "langgraph-store",
+                }
+                if memory_type is not None:
+                    updates["type"] = memory_type
+                client.update_memory(
+                    agent_id=agent_id,
+                    memory_id=str(existing_id),
+                    updates=updates,
+                )
+            else:
+                client.remember(
+                    agent_id=agent_id,
+                    memory_type=memory_type,
+                    title=title,
+                    content=str(raw_content),
+                    confidence=confidence,
+                    tags=all_tags,
+                    source="langgraph-store",
+                    provenance="explicit_statement",
+                )
+
+        # Invalidate search cache for this namespace because we mutated it
         prefix = op.namespace
         with self._lock:
             self._search_cache = {
-                    k: v for k, v in self._search_cache.items() if k[0] != prefix
-                }
+                k: v for k, v in self._search_cache.items() if k[0] != prefix
+            }
 
     # ------------------------------------------------------------------ #
     # SEARCH                                                             #

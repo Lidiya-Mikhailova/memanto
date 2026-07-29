@@ -1,5 +1,3 @@
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -223,7 +221,7 @@ def test_do_put_upsert_behavior(mock_sdk_client):
     store = MemantoStore(api_key="test_key")
     client_instance = MagicMock()
     mock_sdk_client.return_value = client_instance
-    
+
     # 1. Test update
     client_instance.recall_recent.return_value = {
         "memories": [{"id": "mem-1", "tags": ["lg:key:my_key"], "type": "fact"}]
@@ -238,6 +236,7 @@ def test_do_put_upsert_behavior(mock_sdk_client):
     client_instance.recall_recent.return_value = {"memories": []}
     client_instance.recall.side_effect = RuntimeError("backend down")
     import pytest
+
     with pytest.raises(RuntimeError, match="Cannot safely determine"):
         store._do_put(PutOp(namespace=("my_ns",), key="my_key", value={"content": "x"}))
     client_instance.update_memory.assert_not_called()

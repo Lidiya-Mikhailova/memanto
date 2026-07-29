@@ -66,59 +66,50 @@ class AgentService:
             AgentAlreadyExistsError: If agent already exists
         """
         agent_file = self._get_agent_file(agent_create.agent_id)
-        
-        # Atomic lock: Create the file exclusively to prevent TOCTOU race conditions.
-        # This guarantees only one thread can claim this agent ID.
+        self.agents_dir.mkdir(parents=True, exist_ok=True)
+
+        # Atomically claim the agent ID before creating its namespace.
         try:
-            with open(agent_file, "x") as f:
+            with open(agent_file, "x"):
                 pass
         except FileExistsError:
             raise AgentAlreadyExistsError(
                 f"Agent '{agent_create.agent_id}' already exists"
             )
 
-        namespace = self._generate_namespace(agent_create.agent_id)
-
-        # Create namespace in Moorcheh - CRITICAL: Must succeed.
-        # ``moorcheh_api_key`` is honored on cloud; ignored on on-prem.
-        client = get_moorcheh_client()
-
         try:
-            # Use Moorcheh SDK to create namespace with type="text"
-            client.namespaces.create(namespace, type="text")
-            print(f"[OK] Namespace created in Moorcheh: {namespace}")
-        except ConflictError:
-            # Namespace already exists - this is OK, agent might have been created before
-            print(f"[OK] Namespace already exists in Moorcheh: {namespace}")
-        except Exception as e:
-            # On-prem raises moorcheh.errors.MoorchehApiError (HTTP 409) rather
-            # than the cloud SDK's typed ConflictError when the namespace
-            # already exists. Match on message so both backends behave the same.
-            msg = str(e).lower()
-            if ("namespace" in msg and "already exists" in msg) or "conflict" in msg:
+            namespace = self._generate_namespace(agent_create.agent_id)
+            client = get_moorcheh_client(api_key=moorcheh_api_key)
+
+            try:
+                client.namespaces.create(namespace, type="text")
+                print(f"[OK] Namespace created in Moorcheh: {namespace}")
+            except ConflictError:
                 print(f"[OK] Namespace already exists in Moorcheh: {namespace}")
-            else:
-                raise Exception(
-                    f"Failed to create namespace '{namespace}' in Moorcheh: {str(e)}"
-                )
+            except Exception as exc:
+                message = str(exc).lower()
+                if ("namespace" in message and "already exists" in message) or "conflict" in message:
+                    print(f"[OK] Namespace already exists in Moorcheh: {namespace}")
+                else:
+                    raise Exception(
+                        f"Failed to create namespace '{namespace}' in Moorcheh: {exc}"
+                    )
 
-        # Create agent metadata
-        agent = AgentInfo(
-            agent_id=agent_create.agent_id,
-            namespace=namespace,
-            pattern=agent_create.pattern,
-            description=agent_create.description,
-            created_at=datetime.now(timezone.utc),
-            memory_count=0,
-            session_count=0,
-            status="ready",
-        )
-
-        # Save agent metadata
-        self._save_agent(agent)
-
-        return agent
-
+            agent = AgentInfo(
+                agent_id=agent_create.agent_id,
+                namespace=namespace,
+                pattern=agent_create.pattern,
+                description=agent_create.description,
+                created_at=datetime.now(timezone.utc),
+                memory_count=0,
+                session_count=0,
+                status="ready",
+            )
+            self._save_agent(agent)
+            return agent
+        except Exception:
+            agent_file.unlink(missing_ok=True)
+            raise
     def get_agent(self, agent_id: str) -> AgentInfo | None:
         """
         Get agent by ID
