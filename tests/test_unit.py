@@ -544,6 +544,125 @@ class TestMemoryWriteServiceDelete:
         assert uploaded.get("source") == "system"
 
 
+class TestMemoryWriteServiceUpdateIntegrity:
+    def test_update_memory_preserves_read_service_metadata(self):
+        from memanto.app.services.memory_write_service import MemoryWriteService
+
+        client = MagicMock()
+        client.documents.get.return_value = {
+            "items": [
+                {
+                    "id": "mem-2",
+                    "text": (
+                        "[DECISION] Architecture decision\n\n"
+                        "Use same-ID document replacement for edits."
+                    ),
+                    "metadata": {
+                        "agent_id": "agent-1",
+                        "memory_type": "decision",
+                        "actor_id": "user",
+                        "source": "test",
+                        "source_ref": "issue-770",
+                        "confidence": 0.95,
+                        "status": "active",
+                        "tags": "integrity",
+                        "provenance": "validated",
+                    },
+                }
+            ]
+        }
+        client.documents.upload.return_value = {"status": "queued"}
+
+        MemoryWriteService(client).update_memory(
+            "mem-2",
+            "memanto_agent_agent-1",
+            {"content": "Updated without losing original metadata."},
+        )
+
+        uploaded = client.documents.upload.call_args.kwargs["documents"][0]
+        assert uploaded["memory_type"] == "decision"
+        assert uploaded["provenance"] == "validated"
+        assert uploaded["source_ref"] == "issue-770"
+        assert uploaded["tags"] == "integrity"
+
+    def test_update_memory_accepts_case_insensitive_success_status(self):
+        from memanto.app.services.memory_write_service import MemoryWriteService
+
+        client = MagicMock()
+        client.documents.upload.return_value = {"status": "OK"}
+        existing_memory = {
+            "id": "mem-1",
+            "type": "fact",
+            "title": "Original title",
+            "content": "Original content",
+            "agent_id": "agent-1",
+            "actor_id": "user",
+            "source": "test",
+            "confidence": 0.9,
+            "status": "active",
+            "tags": [],
+        }
+
+        with patch(
+            "memanto.app.services.memory_read_service.MemoryReadService.get_memory",
+            return_value=existing_memory,
+        ):
+            result = MemoryWriteService(client).update_memory(
+                "mem-1",
+                "memanto_agent_agent-1",
+                {"content": "Updated content"},
+            )
+
+        assert result["action"] == "updated"
+        assert result["status"] == "OK"
+        client.documents.delete.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "upload_result,expected_status",
+        [
+            ({"status": "failed"}, "failed"),
+            ({"status": None}, None),
+            ({}, "unknown"),
+        ],
+    )
+    def test_update_memory_rejects_non_success_status_without_delete(
+        self, upload_result, expected_status
+    ):
+        from memanto.app.services.memory_write_service import MemoryWriteService
+        from memanto.app.utils.errors import MemoryError
+
+        client = MagicMock()
+        client.documents.upload.return_value = upload_result
+        existing_memory = {
+            "id": "mem-1",
+            "type": "fact",
+            "title": "Original title",
+            "content": "Original content",
+            "agent_id": "agent-1",
+            "actor_id": "user",
+            "source": "test",
+            "confidence": 0.9,
+            "status": "active",
+            "tags": [],
+        }
+
+        with patch(
+            "memanto.app.services.memory_read_service.MemoryReadService.get_memory",
+            return_value=existing_memory,
+        ):
+            with pytest.raises(MemoryError) as exc_info:
+                MemoryWriteService(client).update_memory(
+                    "mem-1",
+                    "memanto_agent_agent-1",
+                    {"content": "Updated content"},
+                )
+
+        assert str(exc_info.value) == (
+            f"Failed to upload updated memory mem-1: {expected_status}"
+        )
+        client.documents.delete.assert_not_called()
+
+
 class TestMemoryReadServiceFormatting:
     def test_format_memory_item_preserves_falsey_metadata_values(self):
         from memanto.app.services.memory_read_service import MemoryReadService

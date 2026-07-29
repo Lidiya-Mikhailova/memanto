@@ -352,6 +352,7 @@ class MemoryWriteService:
                 confidence=updates.get("confidence", metadata.get("confidence", 0.8)),
                 status=updates.get("status", metadata.get("status", "active")),
                 tags=updates.get("tags", metadata.get("tags", [])),
+                provenance=metadata.get("provenance") or "explicit_statement",
             )
 
             # Update timestamps (preserve created_at, set updated_at to now)
@@ -416,16 +417,24 @@ class MemoryWriteService:
             except Exception as e:
                 raise MemoryError(f"Upload failed. Error: {e}")
 
+            status = upload_result.get("status", "unknown")
+            if str(status).lower() not in SUCCESSFUL_UPLOAD_STATUSES:
+                raise MemoryError(
+                    f"Failed to upload updated memory {memory_id}: {status}"
+                )
+
             return {
                 "id": memory_id,
                 "namespace": namespace,
-                "status": upload_result.get("status", "unknown"),
+                "status": status,
                 "action": "updated",
                 "reason": "Memory updated successfully via overwrite",
                 "validation": validation_result.get("action", "validated"),
                 "updated_fields": list(updates.keys()),
             }
 
+        except MemoryError:
+            raise
         except Exception as e:
             raise MemoryError(f"Failed to update memory: {e}")
 
