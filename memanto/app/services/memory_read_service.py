@@ -286,7 +286,13 @@ class MemoryReadService:
                     "temporal_mode": "as_of",
                 }
 
-            all_memories = self._fetch_all_memories(namespaces, type=type, tags=tags)
+            all_memories = self._fetch_all_memories(
+                namespaces,
+                type=type,
+                tags=tags,
+                filter_expired=False,
+                created_before=as_of_dt.isoformat(),
+            )
             all_memories = self._apply_temporal_filter(
                 all_memories, created_before=as_of_dt.isoformat()
             )
@@ -294,14 +300,25 @@ class MemoryReadService:
             # Filter to only include memories valid at as_of_date
             valid_memories = []
             for memory in all_memories:
-                # Skip if expired before as_of_date
+                # Skip if expired before as_of_date. Mirror the datetime
+                # handling in _filter_expired_memories so a datetime-valued
+                # expires_at cannot crash a historical recall (bounty #770).
                 expires_at = memory.get("expires_at")
                 if expires_at:
                     try:
-                        expires_dt = parse_iso_timestamp(expires_at)
-                        if expires_dt <= as_of_dt:
+                        if isinstance(expires_at, str):
+                            expires_dt = parse_iso_timestamp(expires_at)
+                        elif isinstance(expires_at, datetime):
+                            expires_dt = (
+                                expires_at
+                                if expires_at.tzinfo
+                                else expires_at.replace(tzinfo=timezone.utc)
+                            )
+                        else:
+                            expires_dt = None  # Unknown type: fail open
+                        if expires_dt is not None and expires_dt <= as_of_dt:
                             continue  # Already expired at as_of_date
-                    except (ValueError, AttributeError):
+                    except (ValueError, AttributeError, TypeError):
                         pass
 
                 valid_memories.append(memory)
@@ -475,6 +492,8 @@ class MemoryReadService:
         namespaces: list[str],
         type: list[str] | None = None,
         tags: list[str] | None = None,
+        filter_expired: bool = True,
+        created_before: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         List all stored memories across the given namespaces via Moorcheh's
@@ -483,7 +502,29 @@ class MemoryReadService:
 
         Iterates through all pages using cursor-based pagination (next_token)
         so results are not truncated at the 100-item per-page cap.
+
+        ``filter_expired`` controls whether memories expired at the current
+        wall-clock time are dropped. Point-in-time callers such as
+        ``search_as_of`` must pass ``filter_expired=False`` and apply their
+        own expiry check against the target date, otherwise memories that
+        were valid at that past date but have since expired are silently
+        dropped (timeline amnesia).
+
+        ``created_before`` drops any version whose ``created_at`` is after the
+        given ISO timestamp *before* de-duplication, so point-in-time callers
+        can stop a delete-and-recreate that happened after ``as_of`` from
+        evicting the version that was valid then during newest-version
+        selection (bounty #770).
         """
+        from memanto.app.utils.temporal_helpers import parse_iso_timestamp
+
+        before_dt: datetime | None = None
+        if created_before:
+            try:
+                before_dt = parse_iso_timestamp(created_before)
+            except (TypeError, ValueError, AttributeError):
+                pass  # Fail open: keep newest-version dedup behaviour.
+
         items: list[Any] = []
         for ns in namespaces:
             next_token: str | None = None
@@ -512,6 +553,19 @@ class MemoryReadService:
             if not mid:
                 continue
 
+            # Point-in-time dedup: only versions that existed at the target
+            # date compete for the newest-version slot, so a delete-and-recreate
+            # after as_of cannot displace the version valid then (bounty #770).
+            if before_dt is not None:
+                raw_created = formatted.get("created_at")
+                if not raw_created:
+                    continue
+                try:
+                    if parse_iso_timestamp(str(raw_created)) > before_dt:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+
             version_key = self._memory_version_key(formatted, index)
             existing = latest_by_id.get(cast(str, mid))
             if existing is None or version_key >= existing[0]:
@@ -528,7 +582,9 @@ class MemoryReadService:
 
             memories.append(formatted)
 
-        return self._filter_expired_memories(memories)
+        if filter_expired:
+            return self._filter_expired_memories(memories)
+        return memories
 
     def _memory_version_key(
         self, memory: dict[str, Any], fetch_index: int
