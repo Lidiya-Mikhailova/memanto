@@ -142,15 +142,19 @@ class RecallRequest(BaseModel):
 
 
 def _parse_recall_temporal_bound(v: object, *, end_of_day: bool) -> datetime:
+    # End-of-day must be time.max (23:59:59.999999), matching
+    # parse_as_of_timestamp: the temporal filter compares with a strict `>`,
+    # so a 23:59:59 bound silently drops memories created in the final
+    # sub-second of the requested day.
     if isinstance(v, datetime):
         return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
     if isinstance(v, date):
-        boundary = time(23, 59, 59) if end_of_day else time(0, 0, 0)
+        boundary = time.max if end_of_day else time(0, 0, 0)
         return datetime.combine(v, boundary, tzinfo=timezone.utc)
     if isinstance(v, str):
         if "T" not in v and " " not in v:
             try:
-                boundary = time(23, 59, 59) if end_of_day else time(0, 0, 0)
+                boundary = time.max if end_of_day else time(0, 0, 0)
                 return datetime.combine(
                     date.fromisoformat(v), boundary, tzinfo=timezone.utc
                 )
@@ -190,13 +194,14 @@ class RecallAsOfRequest(BaseModel):
         if isinstance(v, datetime):
             return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
         if isinstance(v, date):
-            return datetime.combine(v, time(23, 59, 59), tzinfo=timezone.utc)
+            return datetime.combine(v, time.max, tzinfo=timezone.utc)
         if isinstance(v, str):
-            # Date-only (no time component) → end of day
+            # Date-only (no time component) → end of day (time.max, matching
+            # parse_as_of_timestamp — see _parse_recall_temporal_bound)
             if "T" not in v and " " not in v:
                 try:
                     return datetime.combine(
-                        date.fromisoformat(v), time(23, 59, 59), tzinfo=timezone.utc
+                        date.fromisoformat(v), time.max, tzinfo=timezone.utc
                     )
                 except ValueError:
                     pass

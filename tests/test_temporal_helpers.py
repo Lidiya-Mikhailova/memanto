@@ -2,7 +2,11 @@ from datetime import timezone
 
 import pytest
 
-from memanto.app.routes.memory import RecallRequest
+from memanto.app.routes.memory import (
+    RecallAsOfRequest,
+    RecallRecentRequest,
+    RecallRequest,
+)
 from memanto.app.services.memory_read_service import MemoryReadService
 from memanto.app.utils.temporal_helpers import (
     build_temporal_query,
@@ -84,3 +88,42 @@ def test_parse_as_of_timestamp_preserves_explicit_time():
     parsed = parse_as_of_timestamp("2026-01-15T13:30:00Z")
 
     assert parsed.isoformat() == "2026-01-15T13:30:00+00:00"
+
+
+def test_recall_date_only_created_before_covers_the_whole_day():
+    request = RecallRequest.model_validate(
+        {"query": "notes", "created_before": "2026-06-30"}
+    )
+
+    assert request.created_before is not None
+    assert request.created_before.isoformat() == "2026-06-30T23:59:59.999999+00:00"
+
+
+def test_recall_date_only_created_before_keeps_final_subsecond_memory():
+    # A memory created at 23:59:59.5 on the boundary day is still "that day";
+    # a 23:59:59 bound (pre-fix) wrongly excluded it via the strict `>` filter.
+    request = RecallRequest.model_validate(
+        {"query": "notes", "created_before": "2026-06-30"}
+    )
+    service = MemoryReadService(object())
+
+    results = [{"id": "late", "created_at": "2026-06-30T23:59:59.500000+00:00"}]
+    filtered = service._apply_temporal_filter(
+        results, created_before=request.created_before.isoformat()
+    )
+
+    assert [memory["id"] for memory in filtered] == ["late"]
+
+
+def test_recall_recent_date_only_created_before_covers_the_whole_day():
+    request = RecallRecentRequest.model_validate({"created_before": "2026-06-30"})
+
+    assert request.created_before is not None
+    assert request.created_before.isoformat() == "2026-06-30T23:59:59.999999+00:00"
+
+
+def test_recall_as_of_date_only_matches_service_helper_end_of_day():
+    request = RecallAsOfRequest.model_validate({"as_of": "2026-06-30"})
+
+    assert request.as_of == parse_as_of_timestamp("2026-06-30")
+    assert request.as_of.isoformat() == "2026-06-30T23:59:59.999999+00:00"
