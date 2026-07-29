@@ -876,7 +876,10 @@ class MemoryReadService:
             # the content, which may itself contain blank lines.
             first_line, _, rest = raw_text.partition("\n\n")
 
-            title_match = re.match(r"^\[.*?\]\s*(.*)$", first_line)
+            # DOTALL: documents stored before titles were normalized may still
+            # carry a raw newline inside the title block; the prefix must be
+            # stripped instead of leaking into the returned title.
+            title_match = re.match(r"^\[.*?\]\s*(.*)$", first_line, re.DOTALL)
             title = title_match.group(1).strip() if title_match else first_line.strip()
 
             # Strip ONLY a genuine trailing tags block, and only when this record
