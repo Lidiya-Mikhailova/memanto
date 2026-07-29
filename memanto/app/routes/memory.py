@@ -116,6 +116,8 @@ class RecallRequest(BaseModel):
     @field_validator("created_after", mode="before")
     @classmethod
     def parse_created_after(cls, v: object) -> datetime | None:
+        """Parse the inclusive lower timestamp bound for recall."""
+
         if v is None:
             return None
         return _parse_recall_temporal_bound(v, end_of_day=False)
@@ -123,6 +125,8 @@ class RecallRequest(BaseModel):
     @field_validator("created_before", mode="before")
     @classmethod
     def parse_created_before(cls, v: object) -> datetime | None:
+        """Parse the inclusive upper timestamp bound for recall."""
+
         if v is None:
             return None
         return _parse_recall_temporal_bound(v, end_of_day=True)
@@ -291,6 +295,8 @@ class RecallRecentRequest(BaseModel):
     @field_validator("created_after", mode="before")
     @classmethod
     def parse_created_after(cls, v: object) -> datetime | None:
+        """Parse the inclusive lower timestamp bound for recent recall."""
+
         if v is None:
             return None
         return _parse_recall_temporal_bound(v, end_of_day=False)
@@ -298,6 +304,8 @@ class RecallRecentRequest(BaseModel):
     @field_validator("created_before", mode="before")
     @classmethod
     def parse_created_before(cls, v: object) -> datetime | None:
+        """Parse the inclusive upper timestamp bound for recent recall."""
+
         if v is None:
             return None
         return _parse_recall_temporal_bound(v, end_of_day=True)
@@ -329,6 +337,8 @@ def enforce_session_scope(session: Session, agent_id: str) -> None:
 
 
 def resolve_recall_limit(request_limit: int | None) -> int:
+    """Resolve and validate the effective recall result limit."""
+
     recall_cfg = _config_manager.get_recall_config()
     raw_limit = (
         request_limit
@@ -413,10 +423,11 @@ async def remember(
         if is_successful_write_result(result):
             session_service = get_session_service()
             await asyncio.to_thread(
-                session_service.log_memory_to_session_summary,
+                session_service.try_log_memory_to_session_summary,
                 agent_id=agent_id,
                 session_id=session.session_id,
                 memory_record=memory,
+                memory_id=result.get("id"),
             )
 
         return {
@@ -497,11 +508,13 @@ async def batch_remember(
             item_result = batch_results[index] if index < len(batch_results) else None
             if not is_successful_write_result(item_result):
                 continue
+            memory_id = item_result.get("id") if isinstance(item_result, dict) else None
             await asyncio.to_thread(
-                session_service.log_memory_to_session_summary,
+                session_service.try_log_memory_to_session_summary,
                 agent_id=agent_id,
                 session_id=session.session_id,
                 memory_record=record,
+                memory_id=memory_id,
             )
 
         return {
@@ -689,7 +702,7 @@ async def extract_memories_from_conversation(
             if not is_successful_write_result(item_result):
                 continue
             await asyncio.to_thread(
-                session_service.log_memory_to_session_summary,
+                session_service.try_log_memory_to_session_summary,
                 agent_id=agent_id,
                 session_id=session.session_id,
                 memory_record=record,
