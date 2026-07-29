@@ -240,12 +240,21 @@ def build_temporal_query(
           }
         }
     """
-    # Parse relative time if provided and no absolute time given
+    # Parse relative time if provided and no absolute time given. Most relative
+    # phrases describe an open-ended lookback window, but "yesterday" is a
+    # closed calendar-day window. Supplying only its start would also return
+    # today's memories, which contradicts the caller's requested time range.
     if relative_time and not created_after:
-        parsed_relative_time = parse_relative_time(relative_time)
-        if parsed_relative_time is None:
-            raise ValueError(f"Invalid relative_time: {relative_time!r}")
-        created_after = parsed_relative_time
+        normalized_relative_time = relative_time.lower().strip()
+        if normalized_relative_time == "yesterday":
+            created_after, yesterday_end = get_yesterday_range()
+            if not created_before:
+                created_before = yesterday_end
+        else:
+            parsed_relative_time = parse_relative_time(relative_time)
+            if parsed_relative_time is None:
+                raise ValueError(f"Invalid relative_time: {relative_time!r}")
+            created_after = parsed_relative_time
 
     body: dict[str, Any] = {"query": query, "limit": limit}
     if created_after:
