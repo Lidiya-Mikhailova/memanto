@@ -573,6 +573,7 @@ class TestMemoryWriteServiceDelete:
 class TestMemoryReadServiceFormatting:
     def test_plain_single_paragraph_text_keeps_content(self):
         from unittest.mock import MagicMock
+
         from memanto.app.services.memory_read_service import MemoryReadService
 
         formatted = MemoryReadService(MagicMock())._format_memory_item(
@@ -589,6 +590,7 @@ class TestMemoryReadServiceFormatting:
 
     def test_typed_memory_formatting_stays_unchanged(self):
         from unittest.mock import MagicMock
+
         from memanto.app.services.memory_read_service import MemoryReadService
 
         formatted = MemoryReadService(MagicMock())._format_memory_item(
@@ -1734,11 +1736,15 @@ class TestMemoryExportService:
             return MemoryReadService(MagicMock())._format_memory_item(document)
 
         original_multi = "Prefers aisle seats.\n\nAvoids overnight flights."
-        formatted = round_trip("Travel preference", original_multi, ["travel", "flights"])
+        formatted = round_trip(
+            "Travel preference", original_multi, ["travel", "flights"]
+        )
         assert formatted["content"] == original_multi
 
         original_user_tags = "Checklist for the trip:\n\nTags: travel, flights"
-        formatted = round_trip("Travel preference", original_user_tags, ["travel", "flights"])
+        formatted = round_trip(
+            "Travel preference", original_user_tags, ["travel", "flights"]
+        )
         assert formatted["content"] == original_user_tags
 
         original_legacy = "Notes from the importer.\n\nTags: legacy, unverified"

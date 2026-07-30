@@ -921,9 +921,9 @@ class MemoryReadService:
         for tag in parsed_tags:
             if tag is None:
                 continue
-            
+
             clean_tag = str(tag).strip()
             if clean_tag:
                 normalized.append(clean_tag)
-                
+
         return normalized

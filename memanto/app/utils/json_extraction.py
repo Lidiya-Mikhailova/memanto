@@ -28,17 +28,17 @@ def iter_json_arrays(text: str) -> Iterator[list[Any]]:
     for match in re.finditer(r"\[", text):
         if match.start() < last_end:
             continue
-            
+
         try:
             parsed, end = decoder.raw_decode(text, match.start())
         except json.JSONDecodeError:
             continue
-            
+
         if not isinstance(parsed, list):
             continue
-            
+
         last_end = end
-        
+
         raw = text[match.start() : end]
         if raw in seen:
             continue

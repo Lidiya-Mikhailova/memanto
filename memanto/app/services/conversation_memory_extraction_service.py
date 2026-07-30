@@ -69,7 +69,9 @@ class ConversationMemoryExtractionService:
         for parsed in iter_json_arrays(text):
             has_any_array = True
             try:
-                normalized = self._normalize_candidates(parsed, max_memories=max_memories)
+                normalized = self._normalize_candidates(
+                    parsed, max_memories=max_memories
+                )
                 if normalized:
                     return normalized
             except ValueError:

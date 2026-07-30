@@ -106,6 +106,7 @@ def test_extract_ignores_non_json_brackets_before_memory_array():
         }
     ]
 
+
 def test_extract_skips_invalid_json_arrays():
     client = FakeClient(
         "Dummy array first: [1, 2]\n"
@@ -130,6 +131,7 @@ def test_extract_skips_invalid_json_arrays():
         }
     ]
 
+
 def test_extract_ignores_brackets_in_strings():
     client = FakeClient(
         '[{"type":"fact","title":"Nested brackets","content":"Like this [1, 2].","confidence":0.95}]'
@@ -151,6 +153,7 @@ def test_extract_ignores_brackets_in_strings():
             "provenance": "inferred",
         }
     ]
+
 
 def test_extract_omits_unset_active_ai_model(monkeypatch):
     """On-prem fallback should let answer.generate use its configured model."""
