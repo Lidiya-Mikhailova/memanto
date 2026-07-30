@@ -214,7 +214,9 @@ def test_auto_create_is_limited_to_default_agent(
         lifecycle.ensure_ready("attacker-agent")
 
     # Ensure no client recorded the creation of "attacker-agent"
-    assert not any("attacker-agent" in c.created_agents for c in FakeSdkClient.instances)
+    assert not any(
+        "attacker-agent" in c.created_agents for c in FakeSdkClient.instances
+    )
 
     # 2. Configured default agent succeeds and auto-creates
     client = lifecycle.ensure_ready("project-agent")

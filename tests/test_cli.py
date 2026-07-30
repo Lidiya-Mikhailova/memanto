@@ -180,10 +180,13 @@ class TestMEMANTOCLI:
 
     def test_agent_list(self, mock_all_clients):
         """Test 'memanto agent list'"""
-        mock_all_clients.list_agents.return_value = [
-            {"agent_id": "agent-1", "pattern": "support", "description": "Desc 1"},
-            {"agent_id": "agent-2", "pattern": "tool", "description": "Desc 2"},
-        ]
+        mock_all_clients.list_agents.return_value = {
+            "agents": [
+                {"agent_id": "agent-1", "pattern": "support", "description": "Desc 1"},
+                {"agent_id": "agent-2", "pattern": "tool", "description": "Desc 2"},
+            ],
+            "warnings": [],
+        }
 
         result = runner.invoke(app, ["agent", "list"])
         assert result.exit_code == 0

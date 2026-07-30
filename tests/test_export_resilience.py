@@ -88,6 +88,7 @@ class TestSyncUsesCacheFastPath:
             agent_id="test-agent", project_dir=str(project_dir)
         )
 
+        client.recall.assert_not_called()
         assert result["source"] == "cache"
         assert result["total_memories"] == 1
         written = (project_dir / "MEMORY.md").read_text(encoding="utf-8")
@@ -110,7 +111,13 @@ class TestSyncUsesCacheFastPath:
     ):
         client = _build_client(client_cls, monkeypatch, tmp_path)
 
+        # Patch get_data_dir in the specific client module to prove it's never reached
+        mock_get_data_dir = MagicMock()
+        monkeypatch.setattr(f"{client_cls.__module__}.get_data_dir", mock_get_data_dir)
+
         with pytest.raises(ValueError, match="invalid characters"):
             client.sync_memory_to_project(
                 agent_id="../outside", project_dir=str(tmp_path / "project")
             )
+
+        mock_get_data_dir.assert_not_called()

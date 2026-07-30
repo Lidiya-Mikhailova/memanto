@@ -289,15 +289,15 @@ class SdkClient:
         agent_info = self._get_agent_service().create_agent(agent_create, self.api_key)
         return cast(dict[str, Any], agent_info.model_dump(mode="json"))
 
-    def list_agents(self) -> list[dict[str, Any]]:
+    def list_agents(self) -> dict[str, Any]:
         """
         List all registered agents.
 
         Returns:
-            List of agent info dicts.
+            Dictionary with 'agents', 'count', and 'warnings'.
         """
         agent_list = self._get_agent_service().list_agents()
-        return [a.model_dump(mode="json") for a in agent_list.agents]
+        return cast(dict[str, Any], agent_list.model_dump(mode="json"))
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
         """

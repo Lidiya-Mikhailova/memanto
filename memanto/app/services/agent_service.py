@@ -66,11 +66,17 @@ class AgentService:
             AgentAlreadyExistsError: If agent already exists
         """
         agent_file = self._get_agent_file(agent_create.agent_id)
+        if agent_file.exists():
+            raise AgentAlreadyExistsError(
+                f"Agent '{agent_create.agent_id}' already exists"
+            )
+
+        lock_file = agent_file.with_suffix(".json.lock")
         self.agents_dir.mkdir(parents=True, exist_ok=True)
 
         # Atomically claim the agent ID before creating its namespace.
         try:
-            with open(agent_file, "x"):
+            with open(lock_file, "x"):
                 pass
         except FileExistsError:
             raise AgentAlreadyExistsError(
@@ -88,7 +94,9 @@ class AgentService:
                 print(f"[OK] Namespace already exists in Moorcheh: {namespace}")
             except Exception as exc:
                 message = str(exc).lower()
-                if ("namespace" in message and "already exists" in message) or "conflict" in message:
+                if (
+                    "namespace" in message and "already exists" in message
+                ) or "conflict" in message:
                     print(f"[OK] Namespace already exists in Moorcheh: {namespace}")
                 else:
                     raise Exception(
@@ -107,9 +115,9 @@ class AgentService:
             )
             self._save_agent(agent)
             return agent
-        except Exception:
-            agent_file.unlink(missing_ok=True)
-            raise
+        finally:
+            lock_file.unlink(missing_ok=True)
+
     def get_agent(self, agent_id: str) -> AgentInfo | None:
         """
         Get agent by ID
@@ -126,7 +134,13 @@ class AgentService:
 
         try:
             return self._load_agent_file(agent_file)
-        except (OSError, json.JSONDecodeError, TypeError, ValidationError) as exc:
+        except (
+            OSError,
+            json.JSONDecodeError,
+            TypeError,
+            ValidationError,
+            UnicodeDecodeError,
+        ) as exc:
             logger.warning("Skipping invalid agent file %s: %s", agent_file, exc)
             return None
 
@@ -147,7 +161,13 @@ class AgentService:
                 agent = self._load_agent_file(agent_file)
                 if agent is not None:
                     agents.append(agent)
-            except (OSError, json.JSONDecodeError, TypeError, ValidationError) as exc:
+            except (
+                OSError,
+                json.JSONDecodeError,
+                TypeError,
+                ValidationError,
+                UnicodeDecodeError,
+            ) as exc:
                 logger.warning("Skipping invalid agent file %s: %s", agent_file, exc)
                 warnings.append(f"Could not load agent file '{agent_file.name}': {exc}")
 
