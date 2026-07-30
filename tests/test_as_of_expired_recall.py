@@ -135,5 +135,3 @@ def test_as_of_handles_datetime_valued_expiration():
 
     assert "dt-valid" in ids
     assert "dt-stale" not in ids, "datetime expiry before as_of must exclude"
-
-
