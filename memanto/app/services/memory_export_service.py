@@ -201,7 +201,7 @@ class MemoryExportService:
                     tag_str = (
                         ", ".join(_inline_code(t) for t in tags)
                         if isinstance(tags, list)
-                        else _one_line(tags)
+                        else _inline_code(_one_line(tags))
                     )
                     meta_parts.append(f"Tags: {tag_str}")
 

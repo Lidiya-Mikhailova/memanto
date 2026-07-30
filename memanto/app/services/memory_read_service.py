@@ -863,7 +863,13 @@ class MemoryReadService:
 
             title_match = re.match(r"^\[.*?\]\s*(.*)$", first_line, flags=re.DOTALL)
             title = title_match.group(1).strip() if title_match else first_line.strip()
-            content = body if separator else raw_text
+
+            if separator:
+                content = body
+            elif title_match:
+                content = ""
+            else:
+                content = raw_text
 
             # ``MemoryRecord.to_moorcheh_document`` appends a display-only
             # tags footer after the content.  Remove exactly that generated

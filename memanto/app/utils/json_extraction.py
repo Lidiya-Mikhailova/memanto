@@ -7,8 +7,6 @@ import re
 from collections.abc import Iterator
 from typing import Any
 
-_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.IGNORECASE | re.DOTALL)
-
 
 def iter_json_arrays(text: str) -> Iterator[list[Any]]:
     """Yield JSON arrays embedded in a possibly noisy LLM response.
@@ -36,6 +34,10 @@ def iter_json_arrays(text: str) -> Iterator[list[Any]]:
 
         if not isinstance(parsed, list):
             continue
+
+        # Handle doubly-wrapped arrays like [[{...}, {...}]]
+        if len(parsed) == 1 and isinstance(parsed[0], list):
+            parsed = parsed[0]
 
         last_end = end
 

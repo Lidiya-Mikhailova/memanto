@@ -65,9 +65,7 @@ class ConversationMemoryExtractionService:
         if not text:
             raise ValueError("Memory extraction returned an empty response")
 
-        has_any_array = False
         for parsed in iter_json_arrays(text):
-            has_any_array = True
             try:
                 normalized = self._normalize_candidates(
                     parsed, max_memories=max_memories
@@ -76,9 +74,6 @@ class ConversationMemoryExtractionService:
                     return normalized
             except ValueError:
                 continue
-
-        if has_any_array:
-            return []
 
         raise ValueError("Memory extraction did not return valid JSON")
 
