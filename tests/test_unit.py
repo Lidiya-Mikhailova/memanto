@@ -1715,3 +1715,35 @@ class TestMemoryExportService:
 
         assert "Tags: ``ops` [fake](https://example.com)``" in rendered
         assert r"`ops\` [fake](https://example.com)`" not in rendered
+
+    def test_memory_read_roundtrips_complex_formatting(self):
+        from memanto.app.core import MemoryRecord
+        from memanto.app.services.memory_read_service import MemoryReadService
+
+        def round_trip(title: str, content: str, tags: list[str]) -> dict:
+            memory = MemoryRecord(
+                type="preference",
+                title=title,
+                content=content,
+                agent_id="agent-1",
+                actor_id="user-1",
+                source="user",
+                tags=tags,
+            )
+            document = memory.to_moorcheh_document()
+            return MemoryReadService(MagicMock())._format_memory_item(document)
+
+        original_multi = "Prefers aisle seats.\n\nAvoids overnight flights."
+        formatted = round_trip("Travel preference", original_multi, ["travel", "flights"])
+        assert formatted["content"] == original_multi
+
+        original_user_tags = "Checklist for the trip:\n\nTags: travel, flights"
+        formatted = round_trip("Travel preference", original_user_tags, ["travel", "flights"])
+        assert formatted["content"] == original_user_tags
+
+        original_legacy = "Notes from the importer.\n\nTags: legacy, unverified"
+        formatted = round_trip("Travel preference", original_legacy, [])
+        assert formatted["content"] == original_legacy
+
+        formatted = round_trip("Travel\npreference", "Prefers aisle seats.", [])
+        assert formatted["title"] == "Travel\npreference"
