@@ -1747,3 +1747,52 @@ class TestMemoryExportService:
 
         formatted = round_trip("Travel\npreference", "Prefers aisle seats.", [])
         assert formatted["title"] == "Travel\npreference"
+
+
+def test_ui_static_xss_escapes():
+    ui_html = (
+        Path(__file__).resolve().parents[1]
+        / "memanto"
+        / "app"
+        / "ui"
+        / "static"
+        / "index.html"
+    ).read_text(encoding="utf-8")
+
+    assert "${escHtml(agent.agent_id)}" in ui_html
+    assert "${escHtml(m.provenance)}" in ui_html
+    assert "${escHtml(e.message)}" in ui_html
+    assert 'data-memory-id="${attrEsc(memId)}"' in ui_html
+
+    forbidden_raw_interpolations = [
+        "${agent.agent_id}",
+        "${agent.pattern ||",
+        "${agent.description ||",
+        "${agent.namespace ||",
+        "${sess.status ||",
+        "${sess.pattern ||",
+        "${sess.namespace ||",
+        "${trunc(s.title || s.id || 'memory', 30)}",
+        "${m.status ||",
+        "${m.provenance}",
+        "${trunc(m.title ||",
+        "${m.type ||",
+        "${m.source ||",
+        ">${m.source}</span>",
+        "Source: ${m.source ||",
+        "${m.content || m.text",
+        "ID: ${memId ||",
+        "Score: ${m.score",
+        "Updated: ${fmtDate(",
+        "forgetMemory('${memId}'",
+        "forgetMemory('${escHtml(memId)}'",
+        "Could not load agent: ${e.message}",
+        "Session may be expired: ${e.message}",
+        "Error loading agents: ${e.message}",
+        "Error: ${e.message}",
+        "Failed to load config: ${e.message}",
+        "Failed to load analytics: ${e.message}",
+    ]
+
+    for raw in forbidden_raw_interpolations:
+        assert raw not in ui_html
