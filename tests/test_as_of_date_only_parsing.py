@@ -71,3 +71,33 @@ def test_datetime_inputs_are_untouched():
 )
 def test_is_date_only(raw, expected):
     assert temporal_helpers.is_date_only(raw) is expected
+
+
+@pytest.mark.parametrize("raw", ["20261345", "20260732", "1234567", "abcdefgh"])
+def test_basic_format_detection_rejects_non_dates(raw):
+    """Eight characters is not enough -- the value must be a real calendar date."""
+    assert temporal_helpers.is_date_only(raw) is False
+
+
+def test_basic_format_does_not_depend_on_python_311_stdlib(monkeypatch):
+    """The un-hyphenated form must resolve on the 3.10 baseline too.
+
+    ``date.fromisoformat`` only learned the basic ``20260726`` form in Python
+    3.11, but ``requires-python`` is ">=3.10" and CI runs 3.10. This simulates
+    the 3.10 stdlib to prove detection does not silently regress to
+    start-of-day there.
+    """
+    from datetime import date as real_date
+
+    class Py310Date(real_date):
+        @classmethod
+        def fromisoformat(cls, value):
+            if "-" not in value:
+                raise ValueError(f"Invalid isoformat string: {value!r}")
+            return real_date.fromisoformat(value)
+
+    monkeypatch.setattr(temporal_helpers, "date", Py310Date)
+
+    assert temporal_helpers.is_date_only("20260726") is True
+    assert parse_as_of_timestamp("20260726") == EXPECTED
+    assert parse_as_of_timestamp("2026-07-26") == EXPECTED

@@ -46,7 +46,11 @@ from memanto.app.utils.errors import (
     MemoryError,
     map_error_to_http_exception,
 )
-from memanto.app.utils.temporal_helpers import END_OF_DAY, is_date_only
+from memanto.app.utils.temporal_helpers import (
+    END_OF_DAY,
+    is_date_only,
+    parse_date_only,
+)
 from memanto.app.utils.validation import (
     CostGuard,
     is_successful_write_result,
@@ -162,7 +166,7 @@ def _parse_recall_temporal_bound(v: object, *, end_of_day: bool) -> datetime:
             try:
                 boundary = END_OF_DAY if end_of_day else time(0, 0, 0)
                 return datetime.combine(
-                    date.fromisoformat(v), boundary, tzinfo=timezone.utc
+                    parse_date_only(v), boundary, tzinfo=timezone.utc
                 )
             except ValueError:
                 pass
@@ -207,7 +211,7 @@ class RecallAsOfRequest(BaseModel):
             if is_date_only(v):
                 try:
                     return datetime.combine(
-                        date.fromisoformat(v), END_OF_DAY, tzinfo=timezone.utc
+                        parse_date_only(v), END_OF_DAY, tzinfo=timezone.utc
                     )
                 except ValueError:
                     pass
@@ -247,11 +251,13 @@ class RecallChangedSinceRequest(BaseModel):
         if isinstance(v, date):
             return datetime.combine(v, time(0, 0, 0), tzinfo=timezone.utc)
         if isinstance(v, str):
-            # Date-only (no time component) → start of day
-            if "T" not in v and " " not in v:
+            # Date-only (no time component) → start of day. Uses the same shared
+            # helper as the other date-only paths in this module so all three
+            # agree on what counts as a date, on every supported Python.
+            if is_date_only(v):
                 try:
                     return datetime.combine(
-                        date.fromisoformat(v), time(0, 0, 0), tzinfo=timezone.utc
+                        parse_date_only(v), time(0, 0, 0), tzinfo=timezone.utc
                     )
                 except ValueError:
                     pass

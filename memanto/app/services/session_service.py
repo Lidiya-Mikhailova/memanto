@@ -139,6 +139,8 @@ class SessionService:
                 if fchmod is not None:
                     fchmod(fd, self._PRIVATE_FILE_MODE)
             except OSError:
+                # Best-effort only: some platforms and filesystems reject fchmod
+                # even though os.open already created the file with this mode.
                 pass
             return os.fdopen(fd, mode, **kwargs)
         except Exception:
@@ -168,6 +170,8 @@ class SessionService:
             try:
                 tmp_path.unlink()
             except FileNotFoundError:
+                # Expected on the success path: os.replace already moved the
+                # temp file onto the target, so there is nothing left to clean up.
                 pass
 
     def _generate_secure_secret_key(self) -> str:
@@ -429,7 +433,14 @@ class SessionService:
             except OSError:
                 return None
 
-            session = self.get_session(agent_id)
+            try:
+                session = self.get_session(agent_id)
+            except ValueError:
+                # An empty or malformed marker (e.g. a crash between unlink and
+                # the fallback write in _set_active_session) fails validate_safe_id.
+                # An unreadable marker means "no active session", exactly as the
+                # OSError path above already treats it.
+                return None
             if not session:
                 return None
 
@@ -802,8 +813,13 @@ class SessionService:
                 else:
                     with open(active_link) as f:
                         active_agent_id = f.read().strip()
-            except OSError:
-                pass
+            except OSError as exc:
+                # Best-effort: a missing or unreadable active marker must not
+                # block deleting this agent's persisted session state. Leaving
+                # active_agent_id as None simply skips the marker cleanup below.
+                logger.debug(
+                    "Could not read active session marker '%s': %s", active_link, exc
+                )
 
             session_file = self.sessions_dir / f"{agent_id}.json"
             deleted = session_file.exists()

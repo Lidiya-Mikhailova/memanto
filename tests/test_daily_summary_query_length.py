@@ -20,7 +20,10 @@ def _make_summary_service(tmp_path, monkeypatch, session_content: str):
 
     class FakeTokenizer:
         @staticmethod
-        def encode(text: str):
+        def encode(text: str, disallowed_special=()):
+            # Mirrors tiktoken's signature: production passes
+            # disallowed_special=() so special-token markers in session prose
+            # are encoded as ordinary text instead of raising ValueError.
             return list(text.encode("utf-8"))
 
         @staticmethod

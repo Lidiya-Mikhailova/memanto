@@ -57,7 +57,7 @@ def test_different_agents_keep_independent_session_clients(
     """A second agent becoming ready must not invalidate the first client."""
     first_ready = threading.Event()
     second_ready = threading.Event()
-    errors: list[BaseException] = []
+    errors: list[Exception] = []
 
     def recall_first_agent() -> None:
         try:
@@ -65,7 +65,7 @@ def test_different_agents_keep_independent_session_clients(
             first_ready.set()
             assert second_ready.wait(timeout=2)
             assert first_client.recall(agent_id="agent-a") == {"agent_id": "agent-a"}
-        except BaseException as exc:  # pragma: no cover - reported in main thread
+        except Exception as exc:  # pragma: no cover - reported in main thread
             errors.append(exc)
 
     worker = threading.Thread(target=recall_first_agent)
@@ -120,7 +120,7 @@ def test_different_agents_initialize_in_parallel(
     activation_barrier = threading.Barrier(2)
     original_activate = _FakeSdkClient.activate_agent
     clients: list[_FakeSdkClient] = []
-    errors: list[BaseException] = []
+    errors: list[Exception] = []
 
     def synchronized_activate(
         client: _FakeSdkClient,
@@ -135,7 +135,7 @@ def test_different_agents_initialize_in_parallel(
     def initialize(agent_id: str) -> None:
         try:
             clients.append(lifecycle.client_for(agent_id))
-        except BaseException as exc:  # pragma: no cover - reported in main thread
+        except Exception as exc:  # pragma: no cover - reported in main thread
             errors.append(exc)
 
     workers = [

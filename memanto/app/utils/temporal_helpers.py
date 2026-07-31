@@ -44,20 +44,36 @@ def parse_iso_timestamp(ts_str: str) -> datetime:
 END_OF_DAY = time.max
 
 
+def parse_date_only(ts_str: str) -> date:
+    """Parse a calendar date, accepting both ISO-8601 date forms.
+
+    ``date.fromisoformat`` only learned the basic (un-hyphenated) ``20260726``
+    form in Python 3.11, but this project supports 3.10 (see ``requires-python``
+    and the CI matrix). The basic form is handled explicitly so date-only
+    detection behaves identically on every supported interpreter instead of
+    silently depending on the runtime's stdlib version.
+
+    Raises ``ValueError`` for anything that is not a calendar date.
+    """
+    if len(ts_str) == 8 and ts_str.isdigit():
+        return date(int(ts_str[:4]), int(ts_str[4:6]), int(ts_str[6:8]))
+    return date.fromisoformat(ts_str)
+
+
 def is_date_only(ts_str: str) -> bool:
     """True when the string is a calendar date with no time component.
 
     Detected by PARSING rather than by shape. The previous shape check
     (``len == 10 and s[4] == "-" and s[7] == "-"``) silently rejected the
-    ISO-8601 basic format ``20260726`` -- a valid date that
-    ``date.fromisoformat`` accepts -- which then fell through to the datetime
-    parser and became midnight, i.e. the START of the day, flipping the
-    documented end-of-day semantics by nearly 24 hours with no error raised.
+    ISO-8601 basic format ``20260726`` -- a valid date -- which then fell
+    through to the datetime parser and became midnight, i.e. the START of the
+    day, flipping the documented end-of-day semantics by nearly 24 hours with
+    no error raised.
     """
     if not ts_str or "T" in ts_str or " " in ts_str:
         return False
     try:
-        date.fromisoformat(ts_str)
+        parse_date_only(ts_str)
     except ValueError:
         return False
     return True
@@ -75,7 +91,7 @@ def parse_as_of_timestamp(ts_str: str) -> datetime:
     if is_date_only(ts_str):
         try:
             return datetime.combine(
-                date.fromisoformat(ts_str), END_OF_DAY, tzinfo=timezone.utc
+                parse_date_only(ts_str), END_OF_DAY, tzinfo=timezone.utc
             )
         except ValueError:
             pass

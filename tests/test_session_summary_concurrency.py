@@ -26,6 +26,9 @@ def test_concurrent_summary_writes_create_one_header(monkeypatch, tmp_path):
             try:
                 first_exists_checks.wait(timeout=0.5)
             except BrokenBarrierError:
+                # The barrier only widens the race window so the test is more
+                # likely to catch duplicate headers. If it times out or breaks,
+                # continue with the real exists() result rather than failing.
                 pass
         return exists
 

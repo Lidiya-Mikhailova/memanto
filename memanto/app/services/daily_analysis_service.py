@@ -25,6 +25,9 @@ from memanto.app.utils.temporal_helpers import (
 )
 from memanto.app.utils.validation import validate_output_path, validate_safe_id
 
+# Context window of the embedding models Memanto targets. The query budget sits
+# below it so the retrieval query still fits after the backend adds its own
+# framing. Asserted against in tests/test_daily_summary_query_length.py.
 _EMBEDDING_CONTEXT_TOKENS = 2_048
 _EMBEDDING_QUERY_TOKEN_BUDGET = 1_800
 
@@ -58,7 +61,11 @@ def _truncate_embedding_query(
     """Fit text within the embedding budget using a tokenizer or safe bound."""
     tokenizer = _get_embedding_tokenizer(model)
     if tokenizer is not None:
-        token_ids = tokenizer.encode(text)
+        # disallowed_special=() treats tokens like "<|endoftext|>" as ordinary
+        # text. Session content is arbitrary user prose, and tiktoken's default
+        # raises ValueError on those markers -- here that would escape before
+        # generate_summary's try/except turns failures into MemoryError.
+        token_ids = tokenizer.encode(text, disallowed_special=())
         if len(token_ids) <= token_budget:
             return text
         return str(tokenizer.decode(token_ids[:token_budget]))

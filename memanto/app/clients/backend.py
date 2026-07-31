@@ -57,6 +57,11 @@ def get_active_llm_model(cloud_default: str) -> str | None:
         state = json.loads(state_path.read_text())
     except Exception:
         return None
+    # Valid JSON is not necessarily an object: a truncated or hand-edited
+    # state.json can hold a list/string/number, where ``.get`` would raise
+    # AttributeError instead of degrading to the documented ``None``.
+    if not isinstance(state, dict):
+        return None
     return state.get("llm_model") or None
 
 

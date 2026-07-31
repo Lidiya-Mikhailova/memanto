@@ -384,6 +384,10 @@ class MemoryReadService:
                         if expires_dt is not None and expires_dt <= as_of_dt:
                             continue  # Already expired at as_of_date
                     except (ValueError, AttributeError, TypeError):
+                        # Fail open: a malformed expires_at is not proof the
+                        # memory had expired at as_of. Falling through to the
+                        # append below keeps it in the historical result rather
+                        # than silently dropping it (timeline amnesia).
                         pass
 
                 valid_memories.append(memory)
