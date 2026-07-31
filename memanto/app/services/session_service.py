@@ -566,7 +566,15 @@ class SessionService:
         return None
 
     def _save_session(self, session: Session) -> None:
-        """Save session to file"""
+        """Save session to file.
+
+        Deliberately does NOT use the shared ``atomic_write_text`` helper that
+        agent metadata and CLI config use. Both are crash-safe, but session
+        files hold live bearer tokens, so this path additionally hardens the
+        containing directory to 0o700 and any pre-existing session files to
+        0o600 before writing. Swapping in the generic helper would silently
+        drop that hardening.
+        """
         validate_safe_id(session.agent_id, "agent_id")
         self._harden_session_storage()
         session_file = self.sessions_dir / f"{session.agent_id}.json"
