@@ -1124,9 +1124,19 @@ class TestMEMANTOCLI:
         mock_all_clients.generate_daily_summary.return_value = {
             "summary": {"status": "success", "summary_path": "summary.md"},
         }
-        result = runner.invoke(app, ["daily-summary"])
+        with patch(
+            "memanto.cli.commands.memory.utc_date_str",
+            return_value="2026-07-30",
+        ):
+            result = runner.invoke(app, ["daily-summary"])
+
         assert result.exit_code == 0
         assert "generated" in result.stdout.lower()
+        mock_all_clients.generate_daily_summary.assert_called_once_with(
+            agent_id="test-agent",
+            date="2026-07-30",
+            output_path=None,
+        )
 
     def test_detect_conflicts(self, mock_all_clients):
         """Test 'memanto detect-conflicts'"""
@@ -1137,9 +1147,18 @@ class TestMEMANTOCLI:
                 "json_path": "conflicts.json",
             },
         }
-        result = runner.invoke(app, ["detect-conflicts"])
+        with patch(
+            "memanto.cli.commands.memory.utc_date_str",
+            return_value="2026-07-30",
+        ):
+            result = runner.invoke(app, ["detect-conflicts"])
+
         assert result.exit_code == 0
         assert "conflict report generated" in result.stdout.lower()
+        mock_all_clients.generate_conflict_report.assert_called_once_with(
+            agent_id="test-agent",
+            date="2026-07-30",
+        )
 
     def test_conflicts_list(self, mock_all_clients):
         """Test 'memanto conflicts --list'"""
@@ -1152,10 +1171,18 @@ class TestMEMANTOCLI:
                 "recommendation": "merge",
             }
         ]
-        result = runner.invoke(app, ["conflicts", "--list"])
+        with patch(
+            "memanto.cli.commands.memory.utc_date_str",
+            return_value="2026-07-30",
+        ):
+            result = runner.invoke(app, ["conflicts", "--list"])
+
         assert result.exit_code == 0
         assert "Found 1 unresolved conflict" in result.stdout
-
+        mock_all_clients.list_conflicts.assert_called_once_with(
+            agent_id="test-agent",
+            date="2026-07-30",
+        )
     def test_memory_export(self, mock_all_clients):
         """Test 'memanto memory export'"""
         mock_all_clients.export_memory_md.return_value = {
