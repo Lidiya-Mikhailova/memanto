@@ -1233,7 +1233,8 @@ class SdkClient:
             date: Date string (YYYY-MM-DD). Defaults to today.
 
         Returns:
-            List of unresolved conflict dicts.
+            List of unresolved conflict dicts, each with a stable ``index``
+            into the full conflict report.
         """
         if not date:
             date = utc_date_str()
@@ -1248,8 +1249,12 @@ class SdkClient:
         with open(json_path, encoding="utf-8") as f:
             all_conflicts = json.load(f)
 
-        # Return only unresolved conflicts
-        return [c for c in all_conflicts if not c.get("resolved", False)]
+        # Keep unresolved conflicts but preserve each full-report index.
+        return [
+            {**c, "index": idx}
+            for idx, c in enumerate(all_conflicts)
+            if not c.get("resolved", False)
+        ]
 
     def resolve_conflict(
         self,
@@ -1266,7 +1271,8 @@ class SdkClient:
         Args:
             agent_id: Target agent.
             date: Date string (YYYY-MM-DD).
-            conflict_index: 0-based index into the full conflicts list.
+            conflict_index: Stable 0-based index into the full conflict report
+                (use ``list_conflicts(...)[i]["index"]``).
             action: Resolution action — ``keep_old``, ``keep_new``,
                 ``keep_both``, ``remove_both``, or ``manual``.
             manual_content: Required when action is ``manual``.
@@ -1296,6 +1302,15 @@ class SdkClient:
             )
 
         conflict = all_conflicts[conflict_index]
+
+        # Guard against stale/desynced conflict indexes.
+        if conflict.get("resolved", False):
+            raise ValueError(
+                f"Conflict at index {conflict_index} is already resolved. "
+                "Re-list conflicts and resolve using the 'index' field returned "
+                "by list_conflicts."
+            )
+
         old_id = conflict.get("old_memory_id")
         new_id = conflict.get("new_memory_id")
 
