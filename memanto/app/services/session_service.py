@@ -229,7 +229,7 @@ class SessionService:
 
                 while True:
                     try:
-                        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
                         break
                     except OSError as exc:
                         if exc.errno not in {
@@ -252,7 +252,7 @@ class SessionService:
                 if os.name == "nt":
                     import msvcrt
 
-                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
                 else:
                     import fcntl
 
