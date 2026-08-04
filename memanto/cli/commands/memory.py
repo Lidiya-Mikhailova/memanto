@@ -14,6 +14,7 @@ import typer
 from rich.panel import Panel
 
 from memanto.app.constants import SourceType
+from memanto.app.core import is_valid_source
 from memanto.app.utils.temporal_helpers import get_yesterday_range
 from memanto.cli.commands._shared import (
     BOLD_PRIMARY,
@@ -62,7 +63,10 @@ def remember(
     ),
     tags: str | None = typer.Option(None, "--tags", help="Comma-separated tags"),
     source: str = typer.Option(
-        "user", "--source", "-s", help="Source of the memory (e.g., user, agent_name)"
+        "user",
+        "--source",
+        "-s",
+        help="Who wrote the memory (e.g., user, agent, cursor, codex, claude_code)",
     ),
     provenance: str = typer.Option(
         "explicit_statement",
@@ -264,9 +268,11 @@ def remember(
     # Parse tags
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
 
-    if source not in {"user", "agent", "tool", "system"}:
+    if not is_valid_source(source):
         _error(
-            f"Invalid source: '{source}'. Must be one of user, agent, tool, or system."
+            f"Invalid source: '{source}'.",
+            hint="A source names who wrote the memory (e.g. user, agent, cursor, "
+            "codex, claude_code). Use up to 64 letters, digits, '.', '_', or '-'.",
         )
 
     try:

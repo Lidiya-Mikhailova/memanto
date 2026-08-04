@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import jwt
 import pytest
+from pydantic import ValidationError
 
 from memanto.app.config import settings
 from memanto.app.core import MemoryRecord
@@ -602,6 +603,46 @@ class TestSessionService:
 class TestMemoryRecord:
     """Unit tests for core memory record invariants."""
 
+    @staticmethod
+    def _record(**overrides):
+        """Build a minimal valid MemoryRecord with *overrides* applied."""
+        fields = {
+            "type": "fact",
+            "title": "Source label",
+            "content": "Recording which writer produced this memory.",
+            "agent_id": "agent-1",
+            "actor_id": "agent-1",
+            "source": "agent",
+        }
+        fields.update(overrides)
+        return MemoryRecord(**fields)
+
+    @pytest.mark.parametrize(
+        "source",
+        ["user", "agent", "tool", "system", "cursor", "codex", "claude_code", "mem0"],
+    )
+    def test_source_accepts_any_writer_label(self, source):
+        """Sources are open so each writer is attributable in recall."""
+        assert self._record(source=source).source == source
+
+    def test_source_is_trimmed(self):
+        assert self._record(source="  cursor  ").source == "cursor"
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "",
+            "   ",
+            "claude code",  # a space splits the `#source:` filter token
+            "cursor#hack",  # '#' opens a new Moorcheh filter clause
+            "x" * 65,
+        ],
+    )
+    def test_source_rejects_labels_that_break_filter_syntax(self, source):
+        """Open does not mean unbounded: `#source:<value>` must stay parseable."""
+        with pytest.raises(ValidationError):
+            self._record(source=source)
+
     def test_set_ttl_rejects_non_positive_values(self):
         """Zero/negative TTLs should not create immediately expired memories."""
         memory = MemoryRecord(
@@ -883,7 +924,8 @@ class TestMemoryWriteServiceDelete:
         assert uploaded.get("original_id") == "orig-123"
         assert "validation_count" not in uploaded
 
-    def test_update_memory_normalizes_legacy_source_values(self):
+    def _update_memory_with_source(self, source):
+        """Run an update over a stored memory carrying *source* and return it."""
         from memanto.app.services.memory_write_service import MemoryWriteService
 
         client = MagicMock()
@@ -894,7 +936,7 @@ class TestMemoryWriteServiceDelete:
             "title": "Title",
             "content": "Content",
             "actor_id": "tester",
-            "source": "manual",  # legacy value
+            "source": source,
             "confidence": 0.8,
             "status": "active",
         }
@@ -909,9 +951,18 @@ class TestMemoryWriteServiceDelete:
                 {"title": "New title"},
             )
 
-        uploaded = client.documents.upload.call_args.kwargs["documents"][0]
-        # Should normalize 'manual' (invalid SourceType) to 'system'
-        assert uploaded.get("source") == "system"
+        return client.documents.upload.call_args.kwargs["documents"][0].get("source")
+
+    @pytest.mark.parametrize("source", ["manual", "cursor", "codex", "claude_code"])
+    def test_update_memory_preserves_open_source_labels(self, source):
+        # Sources name the writer, so an update must not rewrite them.
+        assert self._update_memory_with_source(source) == source
+
+    @pytest.mark.parametrize("source", ["", "   ", "manual entry", "cursor#hack"])
+    def test_update_memory_falls_back_for_unusable_source_values(self, source):
+        # Blank or filter-breaking labels would make MemoryRecord reject the
+        # rewrite, so the update degrades instead of failing.
+        assert self._update_memory_with_source(source) == "system"
 
 
 class TestMemoryWriteServiceUpdateIntegrity:
