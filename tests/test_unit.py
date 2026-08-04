@@ -2266,7 +2266,7 @@ class TestMemoryExportService:
         assert formatted["content"] == original_legacy
 
         formatted = round_trip("Travel\npreference", "Prefers aisle seats.", [])
-        assert formatted["title"] == "Travel\npreference"
+        assert formatted["title"] == "Travel preference"
 
 
 def test_ui_static_xss_escapes():
