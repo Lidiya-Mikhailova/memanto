@@ -861,8 +861,12 @@ class MemoryReadService:
 
             # Extract title: strip the "[TYPE] " prefix from first line
 
-            title_match = re.match(r"^\[.*?\]\s*(.*)$", first_line, flags=re.DOTALL)
-            title = title_match.group(1).strip() if title_match else first_line.strip()
+            title_match = re.match(r"^\[(.*?)\]\s*(.*)$", first_line, flags=re.DOTALL)
+            if title_match and title_match.group(1).lower() in VALID_MEMORY_TYPES:
+                title = title_match.group(2).strip()
+            else:
+                title_match = None
+                title = first_line.strip()
 
             if separator:
                 content = body
