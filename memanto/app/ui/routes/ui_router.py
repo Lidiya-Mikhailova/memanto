@@ -10,6 +10,7 @@ import os
 import re
 import signal
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -939,7 +940,13 @@ async def shutdown_server(
     return {"status": "shutting down"}
 
 
-_MIGRATE_PROVIDERS = ("mem0", "letta", "supermemory", "okf")
+_MIGRATE_PROVIDERS = ("mem0", "letta", "supermemory", "okf", "langfuse")
+
+# Providers with no cost/latency baseline to benchmark Memanto against: OKF is
+# a portable local format, and Langfuse is an observability backend, not a
+# memory store being migrated off. The UI hides the savings tiles when the
+# savings object comes back empty.
+_NO_SAVINGS_PROVIDERS = ("okf", "langfuse")
 
 
 def _migrate_compact_metrics(provider: str, metrics: dict) -> dict:
@@ -993,10 +1000,90 @@ def _migrate_compact_metrics(provider: str, metrics: dict) -> dict:
     }
 
 
+def _migrate_langfuse_ledger() -> tuple[Path, dict]:
+    """The Langfuse sync ledger and its path.
+
+    Langfuse is a repeatable sync rather than a one-shot import, so the tile
+    must reconcile against the same ledger the CLI uses — otherwise every
+    click would rewrite every signature.
+    """
+    from memanto.cli.migrate.langfuse_state import load_state, state_path
+
+    path = state_path(_config_manager.get_migrate_dir("langfuse"))
+    return path, load_state(path)
+
+
+def _migrate_langfuse_config(options: dict) -> Any:
+    """Build the tile's ``CaptureConfig``, rejecting bad modes with a 400.
+
+    Applied to file replays as well as live pulls, so the capture checkboxes
+    mean the same thing either way.
+    """
+    from memanto.cli.migrate.langfuse_rules import CaptureConfig, parse_capture_modes
+
+    try:
+        return CaptureConfig(
+            modes=parse_capture_modes(options.get("capture")),
+            score_threshold=float(options.get("score_threshold", 0.5)),
+            latency_ms=float(options.get("latency_ms", 30_000.0)),
+            cost_usd=float(options.get("cost_usd", 1.0)),
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+def _migrate_langfuse_export(api_key: str, options: dict) -> tuple[str, dict]:
+    """Pull a live Langfuse export using the tile's capture settings."""
+    from memanto.cli.analyze.langfuse_export import (
+        normalize_host,
+        run_langfuse_export,
+    )
+    from memanto.cli.migrate.langfuse_state import last_synced_at
+
+    modes = _migrate_langfuse_config(options).modes
+    since_days = options.get("since_days")
+    since: datetime | None
+    if since_days:
+        since = datetime.now(timezone.utc) - timedelta(days=int(since_days))
+    else:
+        _ledger_path, state = _migrate_langfuse_ledger()
+        since = last_synced_at(state)
+
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    dest = _config_manager.get_migrate_dir("langfuse") / stamp
+    dest.mkdir(parents=True, exist_ok=True)
+    try:
+        export_path, export = run_langfuse_export(
+            api_key.strip(),
+            dest,
+            host=normalize_host(
+                options.get("host") or _config_manager.get_langfuse_host()
+            ),
+            since=since,
+            capture=set(modes),
+            score_threshold=float(options.get("score_threshold", 0.5)),
+            latency_ms=float(options.get("latency_ms", 30_000.0)),
+            cost_usd=float(options.get("cost_usd", 1.0)),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Langfuse export failed: {exc}")
+    return str(export_path), export
+
+
+def _migrate_savings(provider: str, export: dict) -> dict:
+    """Compact savings metrics, or ``{}`` for providers with no baseline."""
+    if provider in _NO_SAVINGS_PROVIDERS:
+        return {}
+    return _migrate_compact_metrics(provider, _migrate_get_metrics_fn(provider)(export))
+
+
 def _migrate_load_or_export(
     provider: str,
     file_path: str | None,
     api_key: str | None,
+    options: dict | None = None,
 ) -> tuple[str, dict]:
     """Either load a JSON export from disk or pull one live with the API key.
 
@@ -1039,6 +1126,10 @@ def _migrate_load_or_export(
             status_code=400,
             detail="Either `file` (server-side path) or `api_key` is required.",
         )
+
+    # Langfuse takes capture modes and thresholds the other exporters don't.
+    if provider == "langfuse":
+        return _migrate_langfuse_export(api_key, options or {})
 
     exporters: dict[str, Any] = {
         "mem0": run_mem0_export,
@@ -1087,11 +1178,19 @@ async def migrate_dry_run(body: dict, _: None = Depends(_require_local)):
             detail=f"provider must be one of: {', '.join(_MIGRATE_PROVIDERS)}",
         )
 
+    # Validated before the (possibly slow) export so a bad mode fails fast.
+    langfuse_config = _migrate_langfuse_config(body) if provider == "langfuse" else None
+
     source_label, export = _migrate_load_or_export(
-        provider, body.get("file"), body.get("api_key")
+        provider, body.get("file"), body.get("api_key"), body
     )
 
-    rows = map_export(provider, export)
+    if provider == "langfuse":
+        from memanto.cli.migrate.runner import map_langfuse_export
+
+        rows = map_langfuse_export(export, langfuse_config)
+    else:
+        rows = map_export(provider, export)
     src_count = source_count(provider, export)
 
     type_counts: dict[str, int] = {}
@@ -1099,16 +1198,21 @@ async def migrate_dry_run(body: dict, _: None = Depends(_require_local)):
         key = row.get("type") or "auto"
         type_counts[key] = type_counts.get(key, 0) + 1
 
-    # OKF has no cost/latency "compare" module (it's a portable local format,
-    # not a hosted provider to benchmark against) — the UI hides the savings
-    # tiles when this comes back empty.
-    savings = (
-        {}
-        if provider == "okf"
-        else _migrate_compact_metrics(
-            provider, _migrate_get_metrics_fn(provider)(export)
-        )
-    )
+    savings = _migrate_savings(provider, export)
+
+    # Langfuse reconciles against a ledger, so the preview must answer "what
+    # would change", not "what would be written" — a re-sync is mostly no-ops.
+    plan_counts: dict[str, int] = {}
+    if provider == "langfuse":
+        from memanto.cli.migrate.langfuse_state import reconcile
+
+        _ledger_path, state = _migrate_langfuse_ledger()
+        plan = reconcile(rows, state)
+        plan_counts = {
+            "new": len(plan.new_rows),
+            "changed": len(plan.updates),
+            "unchanged": plan.unchanged,
+        }
 
     sample = []
     for row in rows[:5]:
@@ -1133,6 +1237,7 @@ async def migrate_dry_run(body: dict, _: None = Depends(_require_local)):
         "sample": sample,
         "savings": savings,
         "batch_count": (len(rows) + 99) // 100,
+        "plan": plan_counts,
     }
 
 
@@ -1144,7 +1249,7 @@ async def migrate_import(body: dict, _: None = Depends(_require_local)):
     maps, chunks at 100/req, and writes via ``DirectClient.batch_remember``.
     Returns numeric summary only — no LLM narrative.
     """
-    from memanto.cli.migrate.runner import run_migration
+    from memanto.cli.migrate.runner import run_langfuse_sync, run_migration
 
     provider = (body.get("provider") or "").strip().lower()
     if provider not in _MIGRATE_PROVIDERS:
@@ -1164,31 +1269,46 @@ async def migrate_import(body: dict, _: None = Depends(_require_local)):
     if client is None:
         raise HTTPException(status_code=400, detail="No Memanto API key configured.")
 
+    langfuse_config = _migrate_langfuse_config(body) if provider == "langfuse" else None
+
     source_label, export = _migrate_load_or_export(
-        provider, body.get("file"), body.get("api_key")
+        provider, body.get("file"), body.get("api_key"), body
     )
 
     started = time.perf_counter()
+    # Either a LangfuseSyncSummary or a MigrationSummary — both expose as_dict().
+    summary: Any
     try:
-        summary, _rows = run_migration(
-            provider=provider,
-            export=export,
-            client=client,
-            agent_id=str(agent_id),
-            dry_run=False,
-            on_progress=None,
-        )
+        if provider == "langfuse":
+            # Ledger-reconciled: re-clicking the tile updates recurring
+            # signatures in place instead of duplicating them.
+            from memanto.cli.migrate.langfuse_state import save_state
+
+            ledger_path, state = _migrate_langfuse_ledger()
+            summary, _rows, _plan = run_langfuse_sync(
+                export=export,
+                client=client,
+                agent_id=str(agent_id),
+                state=state,
+                dry_run=False,
+                config=langfuse_config,
+                on_progress=None,
+            )
+            save_state(ledger_path, state)
+        else:
+            summary, _rows = run_migration(
+                provider=provider,
+                export=export,
+                client=client,
+                agent_id=str(agent_id),
+                dry_run=False,
+                on_progress=None,
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Import failed: {e}")
     elapsed_ms = round((time.perf_counter() - started) * 1000)
 
-    savings = (
-        {}
-        if provider == "okf"
-        else _migrate_compact_metrics(
-            provider, _migrate_get_metrics_fn(provider)(export)
-        )
-    )
+    savings = _migrate_savings(provider, export)
 
     return {
         "provider": provider,

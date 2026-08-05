@@ -4777,6 +4777,18 @@
             { id: 'letta', label: 'Letta', tagline: 'Archival memory passages', docs: 'https://docs.letta.com' },
             { id: 'supermemory', label: 'Supermemory', tagline: 'Documents and chunks', docs: 'https://supermemory.ai/docs' },
             { id: 'okf', label: 'Open Knowledge Format', tagline: 'Portable local memory bundles (.md)', docs: 'https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf' },
+            { id: 'langfuse', label: 'Langfuse', tagline: 'Errors, failed evals, and cost/latency anomalies', docs: 'https://langfuse.com/docs/api-and-data-platform/features/public-api' },
+        ];
+
+        // Langfuse is a repeatable sync, not a one-shot import: the user picks
+        // which signals to capture, and re-running reconciles against a ledger
+        // instead of duplicating. Labels here map to the backend's capture modes.
+        const LF_CAPTURE_MODES = [
+            { id: 'errors',    label: 'Errors',            hint: 'Failed spans and exceptions' },
+            { id: 'low-score', label: 'Failed evals',      hint: 'Scored below the threshold' },
+            { id: 'slow',      label: 'Latency anomalies', hint: 'Slower than the budget' },
+            { id: 'costly',    label: 'Cost anomalies',    hint: 'More expensive than the budget' },
+            { id: 'success',   label: 'What worked',       hint: 'Scored at or above the threshold' },
         ];
 
         // Official brand logos. Primary uses each org's GitHub avatar
@@ -4789,6 +4801,7 @@
             'letta':       { src: 'https://github.com/letta-ai.png',         fallback: 'https://icons.duckduckgo.com/ip3/letta.com.ico' },
             'supermemory': { src: 'https://github.com/supermemoryai.png',    fallback: 'https://icons.duckduckgo.com/ip3/supermemory.ai.ico' },
             'okf':         { src: 'https://github.com/GoogleCloudPlatform.png', fallback: 'https://icons.duckduckgo.com/ip3/cloud.google.com.ico' },
+            'langfuse':    { src: 'https://github.com/langfuse.png',           fallback: 'https://icons.duckduckgo.com/ip3/langfuse.com.ico' },
         };
 
         function migProviderLogo(id, label) {
@@ -4805,8 +4818,16 @@
             return `<div class="mig-tile-icon">${initials}</div>`;
         }
 
+        function migrateInitialState() {
+            return {
+                provider: null, source: 'file', file: '', apiKey: '', preview: null,
+                lf: { capture: ['errors'], host: '', publicKey: '', secretKey: '', sinceDays: '', scoreThreshold: 0.5, latencyMs: 30000, costUsd: 1 },
+            };
+        }
+
         function openMigrate() {
-            S.migrate = S.migrate || { provider: null, source: 'file', file: '', apiKey: '', preview: null };
+            S.migrate = S.migrate || migrateInitialState();
+            if (!S.migrate.lf) S.migrate.lf = migrateInitialState().lf;
             renderMigrate();
         }
 
@@ -4847,7 +4868,49 @@
             S.migrate.preview = null;
             // OKF is a local file format — there's no hosted API to pull a live export from.
             if (id === 'okf') S.migrate.source = 'file';
+            // Langfuse's whole point is the live sync; a file is only for replays.
+            if (id === 'langfuse') S.migrate.source = 'api';
             renderMigrate();
+        }
+
+        function toggleLfCapture(mode) {
+            captureMigrateInputs();
+            const set = new Set(S.migrate.lf.capture);
+            set.has(mode) ? set.delete(mode) : set.add(mode);
+            // Never leave the user with nothing selected — the sync would be a no-op.
+            if (set.size === 0) set.add(mode);
+            S.migrate.lf.capture = [...set];
+            S.migrate.preview = null;
+            renderMigrate();
+        }
+
+        function renderLangfuseOptions(st) {
+            const lf = st.lf;
+            const picked = new Set(lf.capture);
+            const chips = LF_CAPTURE_MODES.map(m => `
+                <button type="button" class="mig-source-tab ${picked.has(m.id) ? 'active' : ''}"
+                        title="${escHtml(m.hint)}" onclick="toggleLfCapture('${m.id}')">
+                    ${picked.has(m.id) ? '✓ ' : ''}${escHtml(m.label)}
+                </button>
+            `).join('');
+            const needsScore = picked.has('low-score') || picked.has('success');
+            const num = (id, label, value, step, hint) => `
+                <div>
+                    <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px">${escHtml(label)}</label>
+                    <input id="${id}" type="number" step="${step}" value="${value}" oninput="invalidateMigratePreview()" style="width:100%;font-family:var(--font-mono);font-size:12px">
+                    <div style="font-size:11px;color:var(--text-dim);margin-top:4px">${escHtml(hint)}</div>
+                </div>`;
+            return `
+                <div style="margin-top:18px">
+                    <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:8px">What to capture</label>
+                    <div class="mig-source-tabs" style="flex-wrap:wrap">${chips}</div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:16px">
+                    ${num('migLfSinceDays', 'Look back (days)', escHtml(String(lf.sinceDays ?? '')), '1', 'Blank = since the last sync')}
+                    ${needsScore ? num('migLfScore', 'Score threshold', lf.scoreThreshold, '0.05', 'Below = failed eval, above = worked') : ''}
+                    ${picked.has('slow') ? num('migLfLatency', 'Latency budget (ms)', lf.latencyMs, '1000', 'Slower than this is an anomaly') : ''}
+                    ${picked.has('costly') ? num('migLfCost', 'Cost budget (USD)', lf.costUsd, '0.1', 'Pricier than this is an anomaly') : ''}
+                </div>`;
         }
 
         function renderMigrateSource(st) {
@@ -4863,22 +4926,47 @@
                         <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px">Server-side path to a JSON export file</label>
                         <input id="migFile" placeholder="e.g. C:/Users/you/Downloads/mem0_export.json" value="${escHtml(st.file || '')}" oninput="invalidateMigratePreview()" style="width:100%;font-family:var(--font-mono);font-size:12px">
                     </div>`;
-            const apiField = `<div>
+            const isLangfuse = st.provider === 'langfuse';
+            // Langfuse authenticates with a key *pair*; they're joined as
+            // "public:secret" in migrateBody() because the backend carries one
+            // credential string per provider.
+            const apiField = isLangfuse
+                ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+                        <div>
+                            <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px">Public key  ·  <a href="${p.docs}" target="_blank" style="color:var(--accent);text-decoration:none">where?</a></label>
+                            <input id="migLfPublic" placeholder="pk-lf-..." value="${escHtml(st.lf.publicKey || '')}" oninput="invalidateMigratePreview()" style="width:100%;font-family:var(--font-mono);font-size:12px">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px">Secret key</label>
+                            <input id="migLfSecret" type="password" placeholder="sk-lf-..." value="${escHtml(st.lf.secretKey || '')}" oninput="invalidateMigratePreview()" style="width:100%;font-family:var(--font-mono);font-size:12px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px">Host</label>
+                            <input id="migLfHost" placeholder="https://cloud.langfuse.com" value="${escHtml(st.lf.host || '')}" oninput="invalidateMigratePreview()" style="width:100%;font-family:var(--font-mono);font-size:12px">
+                            <div style="font-size:11px;color:var(--text-dim);margin-top:6px">Blank = Langfuse Cloud (EU). Use your own URL if self-hosted.</div>
+                        </div>
+                    </div>`
+                : `<div>
                     <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px">${escHtml(p.label)} API key  ·  <a href="${p.docs}" target="_blank" style="color:var(--accent);text-decoration:none">get one</a></label>
                     <input id="migApiKey" type="password" placeholder="${st.provider === 'mem0' ? 'm0_...' : st.provider === 'letta' ? 'sk-let-...' : 'sm_...'}" value="${escHtml(st.apiKey || '')}" oninput="invalidateMigratePreview()" style="width:100%;font-family:var(--font-mono);font-size:12px">
                     <div style="font-size:11px;color:var(--text-dim);margin-top:6px">Used once for this export — not saved to disk.</div>
                 </div>`;
+            const lfNote = isLangfuse
+                ? `<p style="color:var(--text-dim);font-size:12px;margin:0 0 14px 0">Groups observations into one memory per <strong>error signature</strong>, not one per occurrence. Safe to re-run — recurring signatures are updated in place, not duplicated.</p>`
+                : '';
             return `
                 <div class="card" style="margin-bottom:18px">
                     <div class="card-label" style="margin-bottom:14px">2. Provide source data</div>
+                    ${lfNote}
                     ${isOkf ? '' : `<div class="mig-source-tabs">
                         <button class="mig-source-tab ${fileActive ? 'active' : ''}" onclick="setMigrateSource('file')">From file</button>
-                        <button class="mig-source-tab ${!fileActive ? 'active' : ''}" onclick="setMigrateSource('api')">Live export (API key)</button>
+                        <button class="mig-source-tab ${!fileActive ? 'active' : ''}" onclick="setMigrateSource('api')">${isLangfuse ? 'Live sync (API keys)' : 'Live export (API key)'}</button>
                     </div>`}
                     ${fileActive ? fileField : apiField}
+                    ${isLangfuse ? renderLangfuseOptions(st) : ''}
                     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
                         <button class="btn btn-secondary" onclick="runMigratePreview()">Preview (dry run)</button>
-                        <button class="btn btn-primary" onclick="runMigrateImport()" ${hasActiveSession() ? '' : 'disabled style="opacity:0.5;cursor:not-allowed"'}>Import now</button>
+                        <button class="btn btn-primary" onclick="runMigrateImport()" ${hasActiveSession() ? '' : 'disabled style="opacity:0.5;cursor:not-allowed"'}>${isLangfuse ? 'Sync now' : 'Import now'}</button>
                     </div>
                 </div>
             `;
@@ -4911,18 +4999,54 @@
             if (fileEl) S.migrate.file = fileEl.value.trim();
             const keyEl = document.getElementById('migApiKey');
             if (keyEl) S.migrate.apiKey = keyEl.value.trim();
+
+            const lf = S.migrate.lf;
+            if (!lf) return;
+            const grab = (id, key, cast) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const raw = el.value.trim();
+                lf[key] = cast && raw !== '' ? cast(raw) : raw;
+            };
+            grab('migLfPublic', 'publicKey');
+            grab('migLfSecret', 'secretKey');
+            grab('migLfHost', 'host');
+            grab('migLfSinceDays', 'sinceDays');
+            grab('migLfScore', 'scoreThreshold', Number);
+            grab('migLfLatency', 'latencyMs', Number);
+            grab('migLfCost', 'costUsd', Number);
         }
 
         function migrateBody() {
             captureMigrateInputs();
             const st = S.migrate;
             const body = { provider: st.provider };
+            const isLangfuse = st.provider === 'langfuse';
+
             if (st.source === 'file') {
                 if (!st.file) { toast('Pick a file path first', 'error'); return null; }
                 body.file = st.file;
+            } else if (isLangfuse) {
+                const lf = st.lf;
+                if (!lf.publicKey || !lf.secretKey) {
+                    toast('Enter both the Langfuse public and secret keys', 'error');
+                    return null;
+                }
+                // The backend carries one credential string per provider.
+                body.api_key = `${lf.publicKey}:${lf.secretKey}`;
+                if (lf.host) body.host = lf.host;
+                if (lf.sinceDays) body.since_days = Number(lf.sinceDays);
             } else {
                 if (!st.apiKey) { toast(`Enter a ${st.provider} API key`, 'error'); return null; }
                 body.api_key = st.apiKey;
+            }
+
+            // Capture settings shape the mapping, so send them for file replays too.
+            if (isLangfuse) {
+                body.capture = st.lf.capture;
+                body.score_threshold = st.lf.scoreThreshold;
+                body.latency_ms = st.lf.latencyMs;
+                body.cost_usd = st.lf.costUsd;
             }
             return body;
         }
@@ -4988,35 +5112,42 @@
             if (!hasActiveSession()) { toast('Activate an agent/session first', 'error'); return; }
             const body = migrateBody();
             if (!body) return;
+            const isLangfuse = body.provider === 'langfuse';
             const ok = await confirmDialog({
-                title: 'Import into Memanto?',
-                message: `This will write all mapped memories into agent "${S.agentId}". The mapped supporting data and original timestamps are preserved.`,
-                confirmLabel: 'Import',
+                title: isLangfuse ? 'Sync Langfuse into Memanto?' : 'Import into Memanto?',
+                message: isLangfuse
+                    ? `This will write one memory per new error signature into agent "${S.agentId}", and update signatures that have recurred since the last sync. Existing memories are not duplicated.`
+                    : `This will write all mapped memories into agent "${S.agentId}". The mapped supporting data and original timestamps are preserved.`,
+                confirmLabel: isLangfuse ? 'Sync' : 'Import',
             });
             if (!ok) return;
 
-            setMigStep('load', `Loading ${body.provider} export...`);
+            setMigStep('load', isLangfuse ? 'Pulling Langfuse observations...' : `Loading ${body.provider} export...`);
             await new Promise(r => setTimeout(r, 200));
-            setMigStep('map', 'Mapping onto Memanto schema...');
+            setMigStep('map', isLangfuse ? 'Grouping into signatures...' : 'Mapping onto Memanto schema...');
             await new Promise(r => setTimeout(r, 200));
-            setMigStep('write', 'Sending batches of 100...');
+            setMigStep('write', isLangfuse ? 'Reconciling against the sync ledger...' : 'Sending batches of 100...');
 
             let res;
             try {
                 res = await api('POST', '/api/ui/migrate/import', body);
             } catch (e) {
                 renderMigrate();
-                toast('Import failed: ' + e.message, 'error');
+                toast((isLangfuse ? 'Sync' : 'Import') + ' failed: ' + e.message, 'error');
                 return;
             }
 
             S.migrate.lastResult = res;
-            // Drop the live API key from page state once import is done — it's
-            // no longer needed and shouldn't linger in memory.
+            // Drop the live credentials from page state once the run is done —
+            // they're no longer needed and shouldn't linger in memory.
             S.migrate.apiKey = '';
+            if (S.migrate.lf) S.migrate.lf.secretKey = '';
             renderMigrateResult(res);
             postMigrateRefresh();
-            toast(`Imported ${res.summary.imported} memories from ${body.provider}`, 'success');
+            const sum = res.summary || {};
+            toast(isLangfuse
+                ? `Synced Langfuse: ${sum.imported || 0} new, ${sum.updated || 0} updated`
+                : `Imported ${sum.imported} memories from ${body.provider}`, 'success');
         }
 
         // ----- Preview (after dry-run) ----------------------------------
@@ -5038,14 +5169,25 @@
                         <div class="mig-stat"><div class="label">Tokens saved</div><div class="value success">${(sv.tokens_saved || 0).toLocaleString()}</div><div class="sub">vs. ${escHtml(preview.provider)} extraction</div></div>
                         <div class="mig-stat"><div class="label">Read latency</div><div class="value">${sv.read_ms_memanto || '—'} ms</div><div class="sub">~${sv.latency_speedup_x || '—'}× faster than ~${sv.read_ms_source || '—'}ms</div></div>
                         <div class="mig-stat"><div class="label">Storage saved</div><div class="value">${escHtml(sv.storage_saved_human || '—')}</div><div class="sub">~${sv.storage_compression_ratio || '—'}× smaller</div></div>` : '';
+            // Langfuse reconciles against a ledger, so the useful preview is
+            // "what would change", not "what would be written".
+            const plan = preview.plan || {};
+            const statTiles = Object.keys(plan).length ? `
+                        <div class="mig-stat"><div class="label">Observations</div><div class="value">${preview.source_count.toLocaleString()}</div><div class="sub">pulled from Langfuse</div></div>
+                        <div class="mig-stat"><div class="label">Signatures</div><div class="value accent">${preview.mapped_count.toLocaleString()}</div><div class="sub">distinct issues</div></div>
+                        <div class="mig-stat"><div class="label">New</div><div class="value success">${plan.new}</div><div class="sub">would be written</div></div>
+                        <div class="mig-stat"><div class="label">Changed</div><div class="value">${plan.changed}</div><div class="sub">updated in place</div></div>
+                        <div class="mig-stat"><div class="label">Unchanged</div><div class="value">${plan.unchanged}</div><div class="sub">already synced</div></div>`
+                : `
+                        <div class="mig-stat"><div class="label">Source records</div><div class="value">${preview.source_count.toLocaleString()}</div></div>
+                        <div class="mig-stat"><div class="label">Would import</div><div class="value accent">${preview.mapped_count.toLocaleString()}</div><div class="sub">${preview.skipped} skipped (empty)</div></div>
+                        <div class="mig-stat"><div class="label">Batches</div><div class="value">${preview.batch_count}</div><div class="sub">100 / req</div></div>`;
             return `
                 <div class="card">
                     <div class="card-label" style="margin-bottom:6px">3. Dry-run preview · ${escHtml(preview.provider)}</div>
                     <p style="color:var(--text-dim);font-size:12px;margin:0 0 14px 0;font-family:var(--font-mono)">${escHtml(preview.source_label)}</p>
                     <div class="mig-stats">
-                        <div class="mig-stat"><div class="label">Source records</div><div class="value">${preview.source_count.toLocaleString()}</div></div>
-                        <div class="mig-stat"><div class="label">Would import</div><div class="value accent">${preview.mapped_count.toLocaleString()}</div><div class="sub">${preview.skipped} skipped (empty)</div></div>
-                        <div class="mig-stat"><div class="label">Batches</div><div class="value">${preview.batch_count}</div><div class="sub">100 / req</div></div>
+                        ${statTiles}
                         ${savingsTiles}
                     </div>
                     <div class="mig-type-chips">${chips || '<span style="color:var(--text-dim);font-size:12px">No type breakdown</span>'}</div>
@@ -5071,29 +5213,38 @@
                         <div class="mig-stat"><div class="label">Tokens saved</div><div class="value">${(sv.tokens_saved || 0).toLocaleString()}</div><div class="sub">~$${Number(sv.extraction_cost_usd || 0).toFixed(2)}</div></div>
                         <div class="mig-stat"><div class="label">Latency</div><div class="value accent">${sv.read_ms_memanto || '—'} ms</div><div class="sub">~${sv.latency_speedup_x || '—'}× faster than ${sv.read_ms_source || '—'}ms</div></div>` : '';
 
-            root.innerHTML = `
-                <div class="card" style="border-color:${sum.failed ? 'var(--warning)' : 'var(--success)'}">
-                    <div class="card-label" style="margin-bottom:6px">Import complete · ${escHtml(res.provider)} → ${escHtml(res.agent_id)}</div>
-                    <p style="color:var(--text-dim);font-size:12px;margin:0 0 14px 0;font-family:var(--font-mono)">${escHtml(res.source_label)} · ${(res.elapsed_ms / 1000).toFixed(1)}s</p>
-                    <div class="mig-stats">
+            const isLangfuse = res.provider === 'langfuse';
+            const resultTiles = isLangfuse ? `
+                        <div class="mig-stat"><div class="label">New memories</div><div class="value success">${(sum.imported || 0).toLocaleString()}</div><div class="sub">written to ${escHtml(res.agent_id)}</div></div>
+                        <div class="mig-stat"><div class="label">Updated</div><div class="value accent">${sum.updated || 0}</div><div class="sub">recurring signatures</div></div>
+                        <div class="mig-stat"><div class="label">Unchanged</div><div class="value">${sum.unchanged || 0}</div><div class="sub">already synced</div></div>
+                        <div class="mig-stat"><div class="label">Observations</div><div class="value">${(sum.observation_count || 0).toLocaleString()}</div><div class="sub">grouped into ${sum.signature_count || 0} signatures</div></div>
+                        <div class="mig-stat"><div class="label">Failed</div><div class="value ${sum.failed ? 'error' : ''}">${sum.failed || 0}</div></div>` : `
                         <div class="mig-stat"><div class="label">Imported</div><div class="value success">${(sum.imported || 0).toLocaleString()}</div><div class="sub">written to ${escHtml(res.agent_id)}</div></div>
                         <div class="mig-stat"><div class="label">Failed</div><div class="value ${sum.failed ? 'error' : ''}">${sum.failed || 0}</div></div>
                         <div class="mig-stat"><div class="label">Skipped</div><div class="value warning">${sum.skipped || 0}</div><div class="sub">empty content</div></div>
-                        <div class="mig-stat"><div class="label">Batches</div><div class="value">${sum.batches || 0}</div><div class="sub">100 / req</div></div>
+                        <div class="mig-stat"><div class="label">Batches</div><div class="value">${sum.batches || 0}</div><div class="sub">100 / req</div></div>`;
+
+            root.innerHTML = `
+                <div class="card" style="border-color:${sum.failed ? 'var(--warning)' : 'var(--success)'}">
+                    <div class="card-label" style="margin-bottom:6px">${isLangfuse ? 'Sync complete' : 'Import complete'} · ${escHtml(res.provider)} → ${escHtml(res.agent_id)}</div>
+                    <p style="color:var(--text-dim);font-size:12px;margin:0 0 14px 0;font-family:var(--font-mono)">${escHtml(res.source_label)} · ${(res.elapsed_ms / 1000).toFixed(1)}s</p>
+                    <div class="mig-stats">
+                        ${resultTiles}
                         ${savingsTiles}
                     </div>
                     <div class="mig-type-chips">${chips}</div>
                     ${errBox}
                     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:22px">
                         <button class="btn btn-secondary" onclick="goToPage('explorer')">Open Explorer</button>
-                        <button class="btn btn-primary" onclick="resetMigrate()">Migrate another</button>
+                        <button class="btn btn-primary" onclick="resetMigrate()">${isLangfuse ? 'Sync another source' : 'Migrate another'}</button>
                     </div>
                 </div>
             `;
         }
 
         function resetMigrate() {
-            S.migrate = { provider: null, source: 'file', file: '', apiKey: '', preview: null };
+            S.migrate = migrateInitialState();
             renderMigrate();
         }
 

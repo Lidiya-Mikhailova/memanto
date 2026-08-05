@@ -25,6 +25,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
+from memanto.cli.migrate.langfuse_state import (
+    Reconciliation,
+    reconcile,
+    record_updated,
+    record_written,
+)
 from memanto.cli.migrate.mappers import MAPPERS, type_breakdown
 
 BATCH_LIMIT = 100
@@ -54,6 +60,138 @@ class MigrationSummary:
             "batches": self.batches,
             "errors": self.errors[:20],  # cap so a bad batch doesn't flood
         }
+
+
+@dataclass
+class LangfuseSyncSummary:
+    """Outcome of one Langfuse sync.
+
+    Distinct from :class:`MigrationSummary` because a Langfuse sync is
+    repeatable: rows are reconciled against a ledger, so the interesting
+    numbers are new/changed/unchanged, not imported/skipped.
+    """
+
+    provider: str = "langfuse"
+    observation_count: int = 0
+    signature_count: int = 0
+    new: int = 0
+    changed: int = 0
+    unchanged: int = 0
+    imported: int = 0
+    updated: int = 0
+    failed: int = 0
+    batches: int = 0
+    type_counts: dict[str, int] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "provider": self.provider,
+            "observation_count": self.observation_count,
+            "signature_count": self.signature_count,
+            "new": self.new,
+            "changed": self.changed,
+            "unchanged": self.unchanged,
+            "imported": self.imported,
+            "updated": self.updated,
+            "failed": self.failed,
+            "batches": self.batches,
+            "type_counts": self.type_counts,
+            "errors": self.errors[:20],
+        }
+
+
+def map_langfuse_export(
+    export: dict[str, Any], config: Any | None = None
+) -> list[dict[str, Any]]:
+    """Map a Langfuse export, optionally overriding the capture settings.
+
+    ``map_export`` reads the capture config off the export's own summary,
+    which is right for a live pull but wrong for a ``--file`` replay: there
+    the caller's ``--capture``/threshold choices must win, or the flags would
+    silently do nothing.
+    """
+    if config is None:
+        return map_export("langfuse", export)
+
+    from memanto.cli.migrate.langfuse_rules import build_rows
+
+    return build_rows(export, config)
+
+
+def run_langfuse_sync(
+    *,
+    export: dict[str, Any],
+    client: Any,
+    agent_id: str,
+    state: dict[str, Any],
+    dry_run: bool,
+    config: Any | None = None,
+    on_progress: Callable[[str], None] | None = None,
+) -> tuple[LangfuseSyncSummary, list[dict[str, Any]], Reconciliation]:
+    """Group, reconcile, and (optionally) write one Langfuse sync.
+
+    Shared by ``memanto migrate langfuse`` and the UI's migrate tile so both
+    honour the ledger — writing through ``run_migration`` instead would
+    duplicate every signature on the second run.
+
+    *config* is an optional ``CaptureConfig`` overriding what the export
+    recorded. Mutates *state* in place; the caller persists it with
+    ``save_state``.
+    """
+    rows = map_langfuse_export(export, config)
+    plan = reconcile(rows, state)
+
+    summary = LangfuseSyncSummary(
+        observation_count=len(export.get("observations") or []),
+        signature_count=len(rows),
+        new=len(plan.new_rows),
+        changed=len(plan.updates),
+        unchanged=plan.unchanged,
+        type_counts=type_breakdown(rows),
+    )
+
+    if dry_run:
+        return summary, rows, plan
+
+    batches = list(chunked(plan.new_rows, BATCH_LIMIT))
+    summary.batches = len(batches)
+    for idx, batch in enumerate(batches, 1):
+        if on_progress:
+            on_progress(
+                f"Writing batch {idx}/{len(batches)} ({len(batch)} new signatures)..."
+            )
+        try:
+            result = client.batch_remember(agent_id=agent_id, memories=batch)
+        except Exception as exc:
+            summary.failed += len(batch)
+            summary.errors.append(f"batch {idx}: {exc}")
+            continue
+
+        summary.imported += int(result.get("successful") or 0)
+        summary.failed += int(result.get("failed") or 0)
+        record_written(state, batch, result.get("results") or [])
+        for item in result.get("results") or []:
+            if isinstance(item, dict) and item.get("error"):
+                summary.errors.append(f"batch {idx}: {item['error']}")
+
+    if plan.updates and on_progress:
+        on_progress(f"Updating {len(plan.updates)} recurring signatures...")
+    for update in plan.updates:
+        try:
+            client.update_memory(
+                agent_id=agent_id,
+                memory_id=update["memory_id"],
+                updates=update["updates"],
+            )
+        except Exception as exc:
+            summary.failed += 1
+            summary.errors.append(f"update {update['signature']}: {exc}")
+            continue
+        record_updated(state, update)
+        summary.updated += 1
+
+    return summary, rows, plan
 
 
 def load_export(file_path: Path) -> dict[str, Any]:

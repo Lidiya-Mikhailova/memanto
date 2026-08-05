@@ -82,14 +82,11 @@ from memanto.cli.commands._shared import (
     migrate_app,
 )
 from memanto.cli.migrate import langfuse_state
-from memanto.cli.migrate.langfuse_rules import CAPTURE_MODES
-from memanto.cli.migrate.mappers import type_breakdown
+from memanto.cli.migrate.langfuse_rules import CaptureConfig, parse_capture_modes
 from memanto.cli.migrate.okf_loader import load_okf_bundle
 from memanto.cli.migrate.runner import (
-    BATCH_LIMIT,
-    chunked,
     load_export,
-    map_export,
+    run_langfuse_sync,
     run_migration,
     write_preview,
 )
@@ -694,75 +691,10 @@ def migrate_supermemory(
 
 def _parse_capture_modes(raw: list[str] | None) -> frozenset[str]:
     """Normalize ``--capture low-score`` to the internal ``low_score``."""
-    modes = {
-        part.strip().lower().replace("-", "_")
-        for value in (raw or ["errors"])
-        for part in value.split(",")
-        if part.strip()
-    }
-    unknown = modes - set(CAPTURE_MODES)
-    if unknown:
-        _error(
-            f"Unknown capture mode(s): {', '.join(sorted(unknown))}",
-            hint=f"Valid modes: {', '.join(m.replace('_', '-') for m in CAPTURE_MODES)}",
-        )
-    if not modes:
-        _error("At least one --capture mode is required.")
-    return frozenset(modes)
-
-
-def _write_langfuse_rows(
-    *,
-    client: Any,
-    agent_id: str,
-    plan: langfuse_state.Reconciliation,
-    state: dict[str, Any],
-    progress: Callable[[str], None],
-) -> dict[str, Any]:
-    """Batch-write new signatures, update changed ones, record both in the ledger."""
-    stats: dict[str, Any] = {
-        "imported": 0,
-        "updated": 0,
-        "failed": 0,
-        "batches": 0,
-        "errors": [],
-    }
-
-    batches = list(chunked(plan.new_rows, BATCH_LIMIT))
-    stats["batches"] = len(batches)
-    for idx, batch in enumerate(batches, 1):
-        progress(f"Writing batch {idx}/{len(batches)} ({len(batch)} new signatures)...")
-        try:
-            result = client.batch_remember(agent_id=agent_id, memories=batch)
-        except Exception as exc:
-            stats["failed"] += len(batch)
-            stats["errors"].append(f"batch {idx}: {exc}")
-            continue
-
-        stats["imported"] += int(result.get("successful") or 0)
-        stats["failed"] += int(result.get("failed") or 0)
-        langfuse_state.record_written(state, batch, result.get("results") or [])
-        for item in result.get("results") or []:
-            if isinstance(item, dict) and item.get("error"):
-                stats["errors"].append(f"batch {idx}: {item['error']}")
-
-    if plan.updates:
-        progress(f"Updating {len(plan.updates)} recurring signatures...")
-    for update in plan.updates:
-        try:
-            client.update_memory(
-                agent_id=agent_id,
-                memory_id=update["memory_id"],
-                updates=update["updates"],
-            )
-        except Exception as exc:
-            stats["failed"] += 1
-            stats["errors"].append(f"update {update['signature']}: {exc}")
-            continue
-        langfuse_state.record_updated(state, update)
-        stats["updated"] += 1
-
-    return stats
+    try:
+        return parse_capture_modes(raw)
+    except ValueError as exc:
+        _error(str(exc))
 
 
 @migrate_app.command("langfuse")
@@ -913,47 +845,49 @@ def migrate_langfuse(
             _error(f"Langfuse export failed: {exc}")
 
     progress("Grouping observations into signatures...")
-    rows = map_export("langfuse", export)
+    summary, rows, _plan = run_langfuse_sync(
+        export=export,
+        client=None if dry_run else get_client(),
+        agent_id=cast(str, target_agent or ""),
+        state=state,
+        dry_run=dry_run,
+        # Explicit so a --file replay honours these flags rather than whatever
+        # the saved export happened to be pulled with.
+        config=CaptureConfig(
+            modes=modes,
+            score_threshold=score_threshold,
+            latency_ms=latency_ms,
+            cost_usd=cost_usd,
+        ),
+        on_progress=progress,
+    )
     preview_path = write_preview(rows, run_dir / "mapped_preview.json")
 
-    plan = langfuse_state.reconcile(rows, state)
-    observation_count = len(export.get("observations") or [])
-
-    stats: dict[str, Any] = {"imported": 0, "updated": 0, "failed": 0, "errors": []}
-    if not dry_run and (plan.new_rows or plan.updates):
-        stats = _write_langfuse_rows(
-            client=get_client(),
-            agent_id=cast(str, target_agent),
-            plan=plan,
-            state=state,
-            progress=progress,
-        )
-        langfuse_state.save_state(ledger_path, state)
-    elif not dry_run:
-        # Nothing changed, but the cursor must still advance.
+    if not dry_run:
+        # Saved even when nothing changed, so the cursor still advances.
         langfuse_state.save_state(ledger_path, state)
 
     type_lines = (
-        ", ".join(f"{k}: {v}" for k, v in sorted(type_breakdown(rows).items())) or "—"
+        ", ".join(f"{k}: {v}" for k, v in sorted(summary.type_counts.items())) or "—"
     )
 
     body_lines = [
-        f"[dim]Observations pulled:[/dim] {observation_count}",
-        f"[dim]Distinct signatures:[/dim] {len(rows)}",
+        f"[dim]Observations pulled:[/dim] {summary.observation_count}",
+        f"[dim]Distinct signatures:[/dim] {summary.signature_count}",
         f"[dim]Type breakdown:[/dim] {type_lines}",
         "",
-        f"[dim]New:[/dim] {len(plan.new_rows)}  "
-        f"[dim]Changed:[/dim] {len(plan.updates)}  "
-        f"[dim]Unchanged:[/dim] {plan.unchanged}",
+        f"[dim]New:[/dim] {summary.new}  "
+        f"[dim]Changed:[/dim] {summary.changed}  "
+        f"[dim]Unchanged:[/dim] {summary.unchanged}",
     ]
     if dry_run:
         body_lines.append("")
         body_lines.append("[yellow]Dry run — no writes performed.[/yellow]")
     else:
         body_lines.append(
-            f"[dim]Imported:[/dim] {stats['imported']}  "
-            f"[dim]Updated:[/dim] {stats['updated']}  "
-            f"[dim]Failed:[/dim] {stats['failed']}"
+            f"[dim]Imported:[/dim] {summary.imported}  "
+            f"[dim]Updated:[/dim] {summary.updated}  "
+            f"[dim]Failed:[/dim] {summary.failed}"
         )
         body_lines.append(f"[dim]Target agent:[/dim] {target_agent}")
 
@@ -963,13 +897,13 @@ def migrate_langfuse(
     body_lines.append(f"[dim]Sync ledger:[/dim] {ledger_path}")
     if previous_sync:
         body_lines.append(f"[dim]Previous sync:[/dim] {previous_sync.isoformat()}")
-    if stats["errors"]:
+    if summary.errors:
         body_lines.append(
-            f"[red]First error:[/red] {stats['errors'][0]}  "
+            f"[red]First error:[/red] {summary.errors[0]}  "
             "[dim](see run dir for more)[/dim]"
         )
 
-    border = WARNING if stats["failed"] else SUCCESS
+    border = WARNING if summary.failed else SUCCESS
     console.print()
     console.print(
         Panel(

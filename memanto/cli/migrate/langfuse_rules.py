@@ -30,6 +30,7 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -103,6 +104,29 @@ class CaptureConfig:
             )
         if not self.modes:
             raise ValueError("At least one capture mode is required.")
+
+
+def parse_capture_modes(values: Iterable[str] | None) -> frozenset[str]:
+    """Normalize user-supplied mode names, accepting ``low-score`` for ``low_score``.
+
+    Shared by the CLI flag and the UI tile so the two can't drift; each
+    caller renders the raised ``ValueError`` in its own idiom.
+    """
+    modes = {
+        part.strip().lower().replace("-", "_")
+        for value in (values or ["errors"])
+        for part in str(value).split(",")
+        if part.strip()
+    }
+    if not modes:
+        raise ValueError("At least one capture mode is required.")
+    unknown = modes - set(CAPTURE_MODES)
+    if unknown:
+        raise ValueError(
+            f"Unknown capture mode(s): {', '.join(sorted(unknown))}. "
+            f"Valid: {', '.join(m.replace('_', '-') for m in CAPTURE_MODES)}"
+        )
+    return frozenset(modes)
 
 
 @dataclass
