@@ -260,3 +260,8 @@ Have questions or feedback? We're here to help:
 ---
 
 **MIT License**
+
+<br>
+<p align="center">
+  <a href="README.md">English</a> | <a href="i18n/README_es.md">Espanol</a> | <a href="i18n/README_zh-CN.md">简体中文</a> | <a href="i18n/README_ja.md">日本語</a>
+</p>
