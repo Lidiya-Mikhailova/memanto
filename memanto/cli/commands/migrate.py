@@ -21,7 +21,7 @@ migrate and old analyze artifacts cleanly separated.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
 
@@ -32,6 +32,11 @@ from memanto.app.utils.errors import (
     InvalidSessionTokenError,
     SessionError,
     SessionExpiredError,
+)
+from memanto.cli.analyze.langfuse_export import (
+    DEFAULT_WINDOW_DAYS,
+    normalize_host,
+    run_langfuse_export,
 )
 from memanto.cli.analyze.letta_compare import (
     build_llm_prompt as build_letta_llm_prompt,
@@ -76,9 +81,15 @@ from memanto.cli.commands._shared import (
     get_client,
     migrate_app,
 )
+from memanto.cli.migrate import langfuse_state
+from memanto.cli.migrate.langfuse_rules import CAPTURE_MODES
+from memanto.cli.migrate.mappers import type_breakdown
 from memanto.cli.migrate.okf_loader import load_okf_bundle
 from memanto.cli.migrate.runner import (
+    BATCH_LIMIT,
+    chunked,
     load_export,
+    map_export,
     run_migration,
     write_preview,
 )
@@ -109,6 +120,15 @@ _PROVIDER_BUNDLES: dict[str, dict[str, Any]] = {
         "report": build_supermemory_report_markdown,
         "export_filename": "supermemory_export.json",
     },
+    # Langfuse carries no savings report: it is an observability backend, not
+    # a memory store to benchmark Memanto against. It also runs its own flow
+    # (`_run_langfuse_flow`) because it reconciles against a sync ledger, so
+    # only `label` and `exporter` are ever read from this entry.
+    "langfuse": {
+        "label": "Langfuse",
+        "exporter": run_langfuse_export,
+        "export_filename": "langfuse_export.json",
+    },
 }
 
 
@@ -135,6 +155,12 @@ def _resolve_provider_key(
             config_manager.set_supermemory_api_key,
             "https://supermemory.ai/docs",
             "SUPERMEMORY_API_KEY",
+        ),
+        "langfuse": (
+            config_manager.get_langfuse_api_key,
+            config_manager.set_langfuse_api_key,
+            "your Langfuse project settings (enter as 'public_key:secret_key')",
+            "LANGFUSE_API_KEY",
         ),
     }
     get_fn, set_fn, docs_url, env_name = getters[provider]
@@ -658,4 +684,301 @@ def migrate_supermemory(
         agent=agent,
         dry_run=dry_run,
         report=report,
+    )
+
+
+# --------------------------------------------------------------------------
+# Langfuse — a repeatable sync, so it runs its own reconciling flow.
+# --------------------------------------------------------------------------
+
+
+def _parse_capture_modes(raw: list[str] | None) -> frozenset[str]:
+    """Normalize ``--capture low-score`` to the internal ``low_score``."""
+    modes = {
+        part.strip().lower().replace("-", "_")
+        for value in (raw or ["errors"])
+        for part in value.split(",")
+        if part.strip()
+    }
+    unknown = modes - set(CAPTURE_MODES)
+    if unknown:
+        _error(
+            f"Unknown capture mode(s): {', '.join(sorted(unknown))}",
+            hint=f"Valid modes: {', '.join(m.replace('_', '-') for m in CAPTURE_MODES)}",
+        )
+    if not modes:
+        _error("At least one --capture mode is required.")
+    return frozenset(modes)
+
+
+def _write_langfuse_rows(
+    *,
+    client: Any,
+    agent_id: str,
+    plan: langfuse_state.Reconciliation,
+    state: dict[str, Any],
+    progress: Callable[[str], None],
+) -> dict[str, Any]:
+    """Batch-write new signatures, update changed ones, record both in the ledger."""
+    stats: dict[str, Any] = {
+        "imported": 0,
+        "updated": 0,
+        "failed": 0,
+        "batches": 0,
+        "errors": [],
+    }
+
+    batches = list(chunked(plan.new_rows, BATCH_LIMIT))
+    stats["batches"] = len(batches)
+    for idx, batch in enumerate(batches, 1):
+        progress(f"Writing batch {idx}/{len(batches)} ({len(batch)} new signatures)...")
+        try:
+            result = client.batch_remember(agent_id=agent_id, memories=batch)
+        except Exception as exc:
+            stats["failed"] += len(batch)
+            stats["errors"].append(f"batch {idx}: {exc}")
+            continue
+
+        stats["imported"] += int(result.get("successful") or 0)
+        stats["failed"] += int(result.get("failed") or 0)
+        langfuse_state.record_written(state, batch, result.get("results") or [])
+        for item in result.get("results") or []:
+            if isinstance(item, dict) and item.get("error"):
+                stats["errors"].append(f"batch {idx}: {item['error']}")
+
+    if plan.updates:
+        progress(f"Updating {len(plan.updates)} recurring signatures...")
+    for update in plan.updates:
+        try:
+            client.update_memory(
+                agent_id=agent_id,
+                memory_id=update["memory_id"],
+                updates=update["updates"],
+            )
+        except Exception as exc:
+            stats["failed"] += 1
+            stats["errors"].append(f"update {update['signature']}: {exc}")
+            continue
+        langfuse_state.record_updated(state, update)
+        stats["updated"] += 1
+
+    return stats
+
+
+@migrate_app.command("langfuse")
+def migrate_langfuse(
+    api_key: str | None = typer.Option(
+        None,
+        "--api-key",
+        envvar="LANGFUSE_API_KEY",
+        help="Langfuse keys as 'public_key:secret_key' (saved to ~/.memanto/.env).",
+    ),
+    host: str | None = typer.Option(
+        None,
+        "--host",
+        envvar="LANGFUSE_HOST",
+        help="Langfuse base URL (default https://cloud.langfuse.com).",
+    ),
+    file: Path | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="Existing Langfuse export JSON (skip the live pull).",
+    ),
+    agent: str | None = typer.Option(
+        None,
+        "--agent",
+        "-a",
+        help="Target Memanto agent id (defaults to the active agent).",
+    ),
+    capture: list[str] | None = typer.Option(
+        None,
+        "--capture",
+        "-c",
+        help=(
+            "What to capture; repeatable or comma-separated. "
+            "errors | low-score | slow | costly | success  [default: errors]"
+        ),
+    ),
+    since_days: int | None = typer.Option(
+        None,
+        "--since-days",
+        help=(
+            "Look back this many days. Defaults to the last sync time, "
+            f"or {DEFAULT_WINDOW_DAYS} days on a first run."
+        ),
+    ),
+    score_threshold: float = typer.Option(
+        0.5,
+        "--score-threshold",
+        help="Score below this is 'low-score'; at or above it is 'success'.",
+    ),
+    latency_ms: float = typer.Option(
+        30_000.0,
+        "--latency-ms",
+        help="Observations slower than this qualify for 'slow'.",
+    ),
+    cost_usd: float = typer.Option(
+        1.0,
+        "--cost-usd",
+        help="Observations costing more than this qualify for 'costly'.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview the grouping and the write/update plan without writing.",
+    ),
+):
+    """Sync Langfuse observability signal into the active (or selected) agent.
+
+    Errors, failed evals, and latency/cost anomalies become memories. Rows are
+    grouped into one memory per *signature* rather than one per occurrence, so
+    a thousand identical failures become a single memory whose confidence
+    reflects how often it happened.
+
+    The run is idempotent: a ledger at
+    ``~/.memanto/migrate/langfuse/state.json`` remembers which signature maps
+    to which memory, so re-running updates existing memories in place instead
+    of duplicating them. It syncs once per invocation — there is no scheduler.
+
+    Examples:
+        memanto migrate langfuse --dry-run
+        memanto migrate langfuse --capture errors --capture slow
+        memanto migrate langfuse --since-days 30 --agent my-agent
+    """
+    modes = _parse_capture_modes(capture)
+
+    base_dir = config_manager.get_migrate_dir("langfuse")
+    ledger_path = langfuse_state.state_path(base_dir)
+    state = langfuse_state.load_state(ledger_path)
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    run_dir = base_dir / stamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    mode_label = "Dry run" if dry_run else "Sync"
+    console.print(
+        Panel.fit(
+            f"[{BOLD_PRIMARY}]Langfuse -> Memanto  {mode_label}[/{BOLD_PRIMARY}]\n"
+            f"[dim]Capturing: {', '.join(sorted(m.replace('_', '-') for m in modes))}[/dim]",
+            border_style=PRIMARY,
+        )
+    )
+
+    def progress(msg: str) -> None:
+        console.print(f"  [{BRIGHT}]…[/{BRIGHT}] {msg}")
+
+    target_agent = None if dry_run else _resolve_target_agent(agent)
+
+    # Window: an explicit --since-days wins, else resume from the last sync.
+    previous_sync = langfuse_state.last_synced_at(state)
+    since: datetime | None
+    if since_days is not None:
+        since = datetime.now(timezone.utc) - timedelta(days=since_days)
+    else:
+        since = previous_sync
+
+    if file is not None:
+        progress(f"Loading export from {file}")
+        try:
+            export = load_export(file)
+        except Exception as exc:
+            _error(f"Failed to load Langfuse export: {exc}")
+    else:
+        resolved_host = normalize_host(host or config_manager.get_langfuse_host())
+        key = _resolve_provider_key("langfuse", api_key)
+        if host:
+            config_manager.set_langfuse_host(resolved_host)
+        window = (
+            f"since {since.isoformat()}"
+            if since
+            else f"last {DEFAULT_WINDOW_DAYS} days"
+        )
+        progress(f"Pulling from {resolved_host} ({window})")
+        try:
+            _, export = run_langfuse_export(
+                key,
+                run_dir,
+                host=resolved_host,
+                since=since,
+                capture=set(modes),
+                score_threshold=score_threshold,
+                latency_ms=latency_ms,
+                cost_usd=cost_usd,
+                on_progress=progress,
+            )
+        except ValueError as exc:
+            _error(str(exc))
+        except Exception as exc:
+            _error(f"Langfuse export failed: {exc}")
+
+    progress("Grouping observations into signatures...")
+    rows = map_export("langfuse", export)
+    preview_path = write_preview(rows, run_dir / "mapped_preview.json")
+
+    plan = langfuse_state.reconcile(rows, state)
+    observation_count = len(export.get("observations") or [])
+
+    stats: dict[str, Any] = {"imported": 0, "updated": 0, "failed": 0, "errors": []}
+    if not dry_run and (plan.new_rows or plan.updates):
+        stats = _write_langfuse_rows(
+            client=get_client(),
+            agent_id=cast(str, target_agent),
+            plan=plan,
+            state=state,
+            progress=progress,
+        )
+        langfuse_state.save_state(ledger_path, state)
+    elif not dry_run:
+        # Nothing changed, but the cursor must still advance.
+        langfuse_state.save_state(ledger_path, state)
+
+    type_lines = (
+        ", ".join(f"{k}: {v}" for k, v in sorted(type_breakdown(rows).items())) or "—"
+    )
+
+    body_lines = [
+        f"[dim]Observations pulled:[/dim] {observation_count}",
+        f"[dim]Distinct signatures:[/dim] {len(rows)}",
+        f"[dim]Type breakdown:[/dim] {type_lines}",
+        "",
+        f"[dim]New:[/dim] {len(plan.new_rows)}  "
+        f"[dim]Changed:[/dim] {len(plan.updates)}  "
+        f"[dim]Unchanged:[/dim] {plan.unchanged}",
+    ]
+    if dry_run:
+        body_lines.append("")
+        body_lines.append("[yellow]Dry run — no writes performed.[/yellow]")
+    else:
+        body_lines.append(
+            f"[dim]Imported:[/dim] {stats['imported']}  "
+            f"[dim]Updated:[/dim] {stats['updated']}  "
+            f"[dim]Failed:[/dim] {stats['failed']}"
+        )
+        body_lines.append(f"[dim]Target agent:[/dim] {target_agent}")
+
+    body_lines.append("")
+    body_lines.append(f"[dim]Run dir:[/dim] {run_dir}")
+    body_lines.append(f"[dim]Mapped preview:[/dim] {preview_path}")
+    body_lines.append(f"[dim]Sync ledger:[/dim] {ledger_path}")
+    if previous_sync:
+        body_lines.append(f"[dim]Previous sync:[/dim] {previous_sync.isoformat()}")
+    if stats["errors"]:
+        body_lines.append(
+            f"[red]First error:[/red] {stats['errors'][0]}  "
+            "[dim](see run dir for more)[/dim]"
+        )
+
+    border = WARNING if stats["failed"] else SUCCESS
+    console.print()
+    console.print(
+        Panel(
+            "\n".join(body_lines),
+            title=(
+                "[bold yellow]Dry run complete[/bold yellow]"
+                if dry_run
+                else "[bold green]Sync complete[/bold green]"
+            ),
+            border_style=border,
+        )
     )
