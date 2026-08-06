@@ -1,4 +1,4 @@
-<p align="center"><a href="https://www.memanto.ai/"><img alt="MEMANTO 标志" src="https://github.com/moorcheh-ai/memanto/raw/main/assets/memanto-logo.svg" width="500"></a></p>
+﻿<p align="center"><a href="https://www.memanto.ai/"><img alt="MEMANTO 标志" src="https://github.com/moorcheh-ai/memanto/raw/main/assets/memanto-logo.svg" width="500"></a></p>
 
 <div align="center"><h1>AI 智能体喜爱的记忆</h1></div>
 <h2 align="center"><em>Memanto 是一个记忆助手智能体，专门管理其他智能体的记忆。它筛选值得保留的内容、跨会话整合记忆，并在智能体启动时立即提供简报；同时，你仍然拥有它们学到的一切。</em></h2>
@@ -135,7 +135,7 @@ Moorcheh 是 Memanto 背后的语义检索引擎。不同于依赖近似搜索�
 
 ---
 ## SDK
-- **TypeScript / Node.js**：[ `@moorcheh-ai/memanto`](sdks/typescript) 使用 `uvx` 启动本地 Memanto 服务器，并提供易用的 `Memanto` 客户端（`remember` / `recall` / `answer`）。
+- **TypeScript / Node.js**：[ `@moorcheh-ai/memanto`](../sdks/typescript) 使用 `uvx` 启动本地 Memanto 服务器，并提供易用的 `Memanto` 客户端（`remember` / `recall` / `answer`）。
 
 ---
 ## REST API
@@ -171,5 +171,5 @@ memanto serve
 
 <br>
 <p align="center">
-  <a href="../README.md">English</a> | <a href="README_es.md">Espanol</a> | <a href="README_zh-CN.md">简体中文</a> | <a href="README_ja.md">日本語</a>
+  <a href="../README.md">English</a> | <a href="README_es.md">Español</a> | <a href="README_zh-CN.md">简体中文</a> | <a href="README_ja.md">日本語</a>
 </p>

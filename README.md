@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
     <a href="https://www.memanto.ai/">
     <img alt="MEMANTO Logo" src="https://github.com/moorcheh-ai/memanto/raw/main/assets/memanto-logo.svg" width="500">
     </a>
@@ -263,5 +263,5 @@ Have questions or feedback? We're here to help:
 
 <br>
 <p align="center">
-  <a href="README.md">English</a> | <a href="i18n/README_es.md">Espanol</a> | <a href="i18n/README_zh-CN.md">简体中文</a> | <a href="i18n/README_ja.md">日本語</a>
+  <a href="README.md">English</a> | <a href="i18n/README_es.md">Español</a> | <a href="i18n/README_zh-CN.md">&#31616;&#20307;&#20013;&#25991;</a> | <a href="i18n/README_ja.md">&#26085;&#26412;&#35486;</a>
 </p>

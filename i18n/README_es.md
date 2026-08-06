@@ -1,20 +1,20 @@
-<p align="center"><a href="https://www.memanto.ai/"><img alt="Logotipo de MEMANTO" src="https://github.com/moorcheh-ai/memanto/raw/main/assets/memanto-logo.svg" width="500"></a></p>
+﻿<p align="center"><a href="https://www.memanto.ai/"><img alt="Logotipo de MEMANTO" src="https://github.com/moorcheh-ai/memanto/raw/main/assets/memanto-logo.svg" width="500"></a></p>
 
 <div align="center"><h1>La memoria que los agentes de IA adoran</h1></div>
 <h2 align="center"><em>Memanto es un agente de memoria complementario: gestiona las memorias de tus otros agentes. Conserva lo que vale la pena guardar, lo consolida entre sesiones e informa a tus agentes cuando empiezan, mientras mantienes la propiedad de todo lo que aprenden.</em></h2>
 
-<p align="center">Funciona automaticamente con Claude Code, Cursor, Codex y mas de 20 agentes. Es completamente convertible entre un backend semantico y Open Knowledge Format (archivos *.md con estilo de wiki para LLM), por lo que puedes inspeccionar, exportar y migrar tu patrimonio de memoria a cualquier lugar: ejecuta <code>memanto migrate</code> y se mueve contigo.</p>
+<p align="center">Funciona autom&aacute;ticamente con Claude Code, Cursor, Codex y m&aacute;s de 20 agentes. Es completamente convertible entre un backend sem&aacute;ntico y Open Knowledge Format (archivos *.md con estilo de wiki para LLM), por lo que puedes inspeccionar, exportar y migrar tu patrimonio de memoria a cualquier lugar: ejecuta <code>memanto migrate</code> y se mueve contigo.</p>
 <p align="center"><code>pip install memanto</code></p>
 
 <p align="center">
   <a href="https://memanto.ai/discord"><img src="https://img.shields.io/badge/Join-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Unirse a Discord"></a>
   <a href="https://www.reddit.com/r/Memanto/"><img src="https://img.shields.io/badge/Join-Reddit-FF4500?style=for-the-badge&logo=reddit&logoColor=white" alt="Unirse a Reddit"></a>
-  <a href="https://www.youtube.com/watch?v=vEtOaoweIG4"><img src="https://img.shields.io/badge/Setup-Video-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Video de configuracion"></a>
-  <a href="https://docs.memanto.ai"><img src="https://img.shields.io/badge/Docs-memanto.ai-000000?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Documentacion"></a>
+  <a href="https://www.youtube.com/watch?v=vEtOaoweIG4"><img src="https://img.shields.io/badge/Setup-Video-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Video de configuraci&oacute;n"></a>
+  <a href="https://docs.memanto.ai"><img src="https://img.shields.io/badge/Docs-memanto.ai-000000?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Documentaci&oacute;n"></a>
 </p>
 
 ---
-## Que es MEMANTO?
+## Qu&eacute; es MEMANTO?
 
 **MEMANTO es un agente de memoria. Recuerda, recupera y responde, para que tus agentes alcancen objetivos a largo plazo y eviten confusiones.**
 
@@ -90,7 +90,7 @@ memanto connect <integration-tool-id> # integra con un comando
 ---
 ## Arquitectura
 
-La recuperacion de Memanto funciona con [Moorcheh](https://moorcheh.ai), un motor semantico de teoria de la informacion. Se ejecuta como contenedor Docker local (gratis y sin cuenta) o como servicio en la nube gratuito (100 000 operaciones); el CLI `memanto` gestiona ambos por ti.
+La recuperacion de Memanto funciona con [Moorcheh](https://moorcheh.ai), un motor sem&aacute;ntico de teoria de la informacion. Se ejecuta como contenedor Docker local (gratis y sin cuenta) o como servicio en la nube gratuito (100 000 operaciones); el CLI `memanto` gestiona ambos por ti.
 
 <p align="center"><img alt="Arquitectura de MEMANTO" src="https://github.com/moorcheh-ai/memanto/raw/main/assets/Architecture-diagram.png" width="1000"></p>
 
@@ -100,14 +100,14 @@ La recuperacion de Memanto funciona con [Moorcheh](https://moorcheh.ai), un moto
 ---
 ## Por que Moorcheh?
 
-Moorcheh es el motor semantico de la recuperacion de Memanto. A diferencia de las bases de datos vectoriales que dependen de busqueda aproximada y requieren canalizaciones de indexacion, Moorcheh usa un enfoque de teoria de la informacion que devuelve resultados exactos sin retraso de indexacion: escribe una memoria y podras buscarla inmediatamente.
+Moorcheh es el motor sem&aacute;ntico de la recuperacion de Memanto. A diferencia de las bases de datos vectoriales que dependen de busqueda aproximada y requieren canalizaciones de indexacion, Moorcheh usa un enfoque de teoria de la informacion que devuelve resultados exactos sin retraso de indexacion: escribe una memoria y podras buscarla inmediatamente.
 
 Memanto no necesita una base de datos vectorial separada, canalizacion de embeddings ni etapa de reranking. El motor Moorcheh se ejecuta como contenedor Docker local para usuarios on-prem (sin cuenta) o como servicio gestionado en la nube con nivel gratuito. En ambos casos es invisible: el CLI `memanto` lo gestiona.
 
 ---
 ## Configuracion y demo
 
-<p align="center"><a href="https://www.youtube.com/watch?v=vEtOaoweIG4"><img src="https://github.com/moorcheh-ai/memanto/raw/main/assets/video-demo.png" alt="Video de configuracion"></a></p>
+<p align="center"><a href="https://www.youtube.com/watch?v=vEtOaoweIG4"><img src="https://github.com/moorcheh-ai/memanto/raw/main/assets/video-demo.png" alt="Video de configuraci&oacute;n"></a></p>
 
 ## Panel local para la mejor experiencia
 
@@ -118,10 +118,10 @@ Memanto no necesita una base de datos vectorial separada, canalizacion de embedd
 
 | Capacidad | Comandos | Que hace |
 |---|---|---|
-| Panel de estado del sistema | `memanto status` | Ve entorno, configuracion, salud del servidor, sesion activa y agentes registrados. |
+| Panel de estado del sistema | `memanto status` | Ve entorno, configuraci&oacute;n, salud del servidor, sesion activa y agentes registrados. |
 | API REST local e interfaz web | `memanto serve`, `memanto ui` | Ejecuta la API REST de MEMANTO localmente y abre una interfaz interactiva. Opcional para usar el CLI. |
 | Gestion de agentes | `memanto agent ...` | Crea, lista o elimina agentes, activa o desactiva sesiones y ejecuta `agent bootstrap`. |
-+| Captura de memoria | `memanto remember` | Guarda memorias, ingesta lotes JSON o usa `--from-conversation` para extraer hechos de chats. |
+| Captura de memoria | `memanto remember` | Guarda memorias, ingesta lotes JSON o usa `--from-conversation` para extraer hechos de chats. |
 | Edicion y eliminacion | `memanto edit`, `memanto forget` | Actualiza una memoria existente o elimina permanentemente una memoria incorrecta u obsoleta. |
 | Carga de archivos | `memanto upload` | Sube .pdf, .docx, .xlsx, .json, .txt, .csv o .md al espacio de memoria de un agente; se puede buscar al instante con `recall`. |
 | Recuperacion avanzada | `memanto recall` | Ejecuta busqueda estandar y consultas temporales (`--as-of`, `--changed-since`) con filtros. |
@@ -145,7 +145,7 @@ Para la referencia completa, consulta la [Guia de usuario del CLI](https://docs.
 ---
 ## SDKs
 
-- **TypeScript / Node.js**: [`@moorcheh-ai/memanto`](sdks/typescript): inicia un servidor Memanto local mediante `uvx` y expone un cliente `Memanto` ergonomico (`remember` / `recall` / `answer`).
+- **TypeScript / Node.js**: [`@moorcheh-ai/memanto`](../sdks/typescript): inicia un servidor Memanto local mediante `uvx` y expone un cliente `Memanto` ergonomico (`remember` / `recall` / `answer`).
 
 ---
 ## API REST
@@ -174,7 +174,7 @@ La referencia completa esta en [docs.memanto.ai/api](https://docs.memanto.ai/api
 ## Soporte
 
 Preguntas o comentarios? Estamos para ayudarte:
-- **Documentacion**: [https://docs.memanto.ai](https://docs.memanto.ai)
+- **Documentaci&oacute;n**: [https://docs.memanto.ai](https://docs.memanto.ai)
 - **Discord**: [Unete a nuestro servidor](https://memanto.ai/discord)
 - **Reddit**: [Unete a nuestra comunidad](https://www.reddit.com/r/Memanto/)
 - **Correo**: support@moorcheh.ai
@@ -185,5 +185,5 @@ Preguntas o comentarios? Estamos para ayudarte:
 
 <br>
 <p align="center">
-  <a href="../README.md">English</a> | <a href="README_es.md">Espanol</a> | <a href="README_zh-CN.md">简体中文</a> | <a href="README_ja.md">日本語</a>
+  <a href="../README.md">English</a> | <a href="README_es.md">Español</a> | <a href="README_zh-CN.md">简体中文</a> | <a href="README_ja.md">日本語</a>
 </p>

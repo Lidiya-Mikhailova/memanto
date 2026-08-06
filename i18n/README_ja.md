@@ -1,4 +1,4 @@
-<p align="center"><a href="https://www.memanto.ai/"><img alt="MEMANTO ロゴ" src="https://github.com/moorcheh-ai/memanto/raw/main/assets/memanto-logo.svg" width="500"></a></p>
+﻿<p align="center"><a href="https://www.memanto.ai/"><img alt="MEMANTO ロゴ" src="https://github.com/moorcheh-ai/memanto/raw/main/assets/memanto-logo.svg" width="500"></a></p>
 
 <div align="center"><h1>AI エージェントが愛するメモリ</h1></div>
 <h2 align="center"><em>Memanto は、他のエージェントのメモリを管理するためのコンパニオン・メモリエージェントです。残すべき情報を整理し、セッションをまたいで統合し、エージェントが開始した瞬間に要点を伝えます。学習した内容の所有権は、常にあなたにあります。</em></h2>
@@ -119,7 +119,7 @@ Moorcheh は Memanto の検索を支えるセマンティックエンジンで�
 
 ---
 ## SDK
-- **TypeScript / Node.js**: [`@moorcheh-ai/memanto`](sdks/typescript) は `uvx` でローカル Memanto サーバーを起動し、使いやすい `Memanto` クライアント（`remember` / `recall` / `answer`）を公開します。
+- **TypeScript / Node.js**: [`@moorcheh-ai/memanto`](../sdks/typescript) は `uvx` でローカル Memanto サーバーを起動し、使いやすい `Memanto` クライアント（`remember` / `recall` / `answer`）を公開します。
 
 ---
 ## REST API
@@ -154,5 +154,5 @@ memanto serve
 
 <br>
 <p align="center">
-  <a href="../README.md">English</a> | <a href="README_es.md">Espanol</a> | <a href="README_zh-CN.md">简体中文</a> | <a href="README_ja.md">日本語</a>
+  <a href="../README.md">English</a> | <a href="README_es.md">Español</a> | <a href="README_zh-CN.md">简体中文</a> | <a href="README_ja.md">日本語</a>
 </p>
