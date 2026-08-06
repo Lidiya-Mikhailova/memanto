@@ -795,6 +795,11 @@ class TestAgentService:
         agent_create = AgentCreate(agent_id="test-agent", pattern=AgentPattern.SUPPORT)
         agent_service.create_agent(agent_create, settings.MOORCHEH_API_KEY)
 
+        # Simulate a stale per-agent lock left by an interrupted create flow.
+        lock_file = agent_service._get_agent_file("test-agent").with_suffix(".json.lock")
+        lock_file.write_text("")
+        assert lock_file.exists()
+
         # Verify exists
         assert agent_service.agent_exists("test-agent")
 
@@ -803,6 +808,7 @@ class TestAgentService:
 
         # Verify deleted
         assert not agent_service.agent_exists("test-agent")
+        assert not lock_file.exists()
 
         print("✅ Agent deleted successfully")
 
