@@ -18,6 +18,7 @@ from memanto.cli.migrate.langfuse_state import (
     record_updated,
     record_written,
     save_state,
+    scope_key,
     state_path,
 )
 
@@ -41,8 +42,11 @@ def ok(memory_id):
     return {"id": memory_id, "status": "queued"}
 
 
-def empty_state():
-    return {"version": 1, "last_synced_at": None, "signatures": {}}
+SCOPE = scope_key("proj-1", "agent-a")
+
+
+def empty_state(scope=SCOPE):
+    return {"version": 1, "scope": scope, "last_synced_at": None, "signatures": {}}
 
 
 # --------------------------------------------------------------------------
@@ -143,7 +147,7 @@ def test_rows_without_a_signature_are_always_written():
     assert len(plan.new_rows) == 1
 
 
-def test_reconciliation_total_accounts_for_every_row():
+def test_every_row_lands_in_exactly_one_bucket():
     state = empty_state()
     rows = [row("sig-a"), row("sig-b"), row("sig-c")]
     first = reconcile(rows, state)
@@ -152,8 +156,8 @@ def test_reconciliation_total_accounts_for_every_row():
     rows[0] = row("sig-a", content="changed", occurrences=5)
     plan: Reconciliation = reconcile(rows, state)
 
-    assert plan.total == 3
     assert (len(plan.new_rows), len(plan.updates), plan.unchanged) == (0, 1, 2)
+    assert len(plan.new_rows) + len(plan.updates) + plan.unchanged == len(rows)
 
 
 # --------------------------------------------------------------------------
@@ -168,7 +172,7 @@ def test_state_round_trips_through_disk(tmp_path):
     record_written(state, plan.new_rows, [ok("mem-a")])
     save_state(path, state)
 
-    reloaded = load_state(path)
+    reloaded = load_state(path, SCOPE)
 
     assert reloaded["signatures"]["sig-a"]["memory_id"] == "mem-a"
     assert last_synced_at(reloaded) is not None
@@ -176,7 +180,7 @@ def test_state_round_trips_through_disk(tmp_path):
 
 
 def test_missing_ledger_starts_empty(tmp_path):
-    state = load_state(state_path(tmp_path / "never-synced"))
+    state = load_state(state_path(tmp_path / "never-synced"), SCOPE)
 
     assert state["signatures"] == {}
     assert state["last_synced_at"] is None
@@ -187,7 +191,7 @@ def test_corrupt_ledger_does_not_block_a_sync(tmp_path):
     path = state_path(tmp_path)
     path.write_text("{ this is not json", encoding="utf-8")
 
-    state = load_state(path)
+    state = load_state(path, SCOPE)
 
     assert state["signatures"] == {}
 
@@ -197,8 +201,78 @@ def test_save_state_stamps_the_cursor(tmp_path):
     save_state(path, empty_state())
 
     written = json.loads(path.read_text(encoding="utf-8"))
-    assert written["last_synced_at"] is not None
-    assert last_synced_at(written).tzinfo is not None
+    scope = written["scopes"][SCOPE]
+    assert scope["last_synced_at"] is not None
+    assert last_synced_at(scope).tzinfo is not None
+
+
+# --------------------------------------------------------------------------
+# Scoping — one ledger per (Langfuse project, destination agent)
+# --------------------------------------------------------------------------
+
+
+def test_two_agents_do_not_shadow_each_other(tmp_path):
+    """A signature written to agent A must still be written to agent B.
+
+    With a single flat ledger, the second agent's sync would see the
+    signature as 'already synced' and skip a write it never received.
+    """
+    path = state_path(tmp_path)
+    rows = [row("sig-a")]
+
+    a = load_state(path, scope_key("proj-1", "agent-a"))
+    plan_a = reconcile(rows, a)
+    record_written(a, plan_a.new_rows, [ok("mem-a")])
+    save_state(path, a, scope_key("proj-1", "agent-a"))
+
+    b = load_state(path, scope_key("proj-1", "agent-b"))
+    plan_b = reconcile(rows, b)
+
+    assert len(plan_a.new_rows) == 1
+    assert len(plan_b.new_rows) == 1, "agent B never received this memory"
+
+
+def test_two_projects_do_not_shadow_each_other(tmp_path):
+    path = state_path(tmp_path)
+    rows = [row("sig-a")]
+
+    one = load_state(path, scope_key("proj-1", "agent-a"))
+    record_written(one, reconcile(rows, one).new_rows, [ok("mem-1")])
+    save_state(path, one, scope_key("proj-1", "agent-a"))
+
+    two = load_state(path, scope_key("proj-2", "agent-a"))
+
+    assert len(reconcile(rows, two).new_rows) == 1
+
+
+def test_saving_one_scope_leaves_the_others_intact(tmp_path):
+    path = state_path(tmp_path)
+    first = scope_key("proj-1", "agent-a")
+    second = scope_key("proj-2", "agent-b")
+
+    a = load_state(path, first)
+    record_written(a, reconcile([row("sig-a")], a).new_rows, [ok("mem-a")])
+    save_state(path, a, first)
+
+    b = load_state(path, second)
+    record_written(b, reconcile([row("sig-b")], b).new_rows, [ok("mem-b")])
+    save_state(path, b, second)
+
+    assert load_state(path, first)["signatures"]["sig-a"]["memory_id"] == "mem-a"
+    assert load_state(path, second)["signatures"]["sig-b"]["memory_id"] == "mem-b"
+
+
+def test_an_unknown_scope_starts_empty(tmp_path):
+    """A scope nobody has synced yet must not inherit another scope's state."""
+    path = state_path(tmp_path)
+    known = empty_state()
+    record_written(known, reconcile([row("sig-a")], known).new_rows, [ok("mem-a")])
+    save_state(path, known)
+
+    fresh = load_state(path, scope_key("proj-9", "agent-z"))
+
+    assert fresh["signatures"] == {}
+    assert fresh["last_synced_at"] is None
 
 
 def test_last_synced_at_tolerates_junk():

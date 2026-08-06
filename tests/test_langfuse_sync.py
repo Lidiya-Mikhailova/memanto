@@ -14,7 +14,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from memanto.cli.migrate.langfuse_state import load_state, state_path
+from memanto.cli.migrate.langfuse_config import project_key
+from memanto.cli.migrate.langfuse_rules import CaptureConfig
+from memanto.cli.migrate.langfuse_state import load_state, scope_key, state_path
 from memanto.cli.migrate.runner import run_langfuse_sync
 
 
@@ -56,13 +58,17 @@ def client():
     return fake
 
 
-def sync(client, state, exp=None, dry_run=False):
+ERRORS_ONLY = CaptureConfig(modes=frozenset({"errors"}))
+
+
+def sync(client, state, exp=None, dry_run=False, config=ERRORS_ONLY):
     return run_langfuse_sync(
         export=exp or export(),
         client=client,
         agent_id="test-agent",
         state=state,
         dry_run=dry_run,
+        config=config,
     )
 
 
@@ -251,8 +257,10 @@ def test_ui_tile_clicked_twice_does_not_duplicate(ui, export_file, client, tmp_p
     assert (first["new"], first["imported"]) == (1, 1)
     assert (second["new"], second["imported"], second["unchanged"]) == (0, 0, 1)
     assert client.batch_remember.call_count == 1
-    # The ledger was persisted, which is what survives a server restart.
-    assert load_state(state_path(tmp_path))["signatures"]
+    # The ledger was persisted under this project+agent scope, which is what
+    # survives a server restart.
+    scope = scope_key(project_key(api_key=None), "test-agent")
+    assert load_state(state_path(tmp_path), scope)["signatures"]
 
 
 def test_ui_rejects_an_unknown_capture_mode(ui, export_file):
@@ -306,17 +314,14 @@ def _slow_export():
 
 
 def test_replaying_a_file_honours_the_requested_capture_modes(client):
-    """A --file replay must use the caller's flags, not the file's summary."""
-    from memanto.cli.migrate.langfuse_rules import CaptureConfig
-
+    """A --file replay must use the caller's settings, not the file's summary."""
     without = sync(client, {}, _slow_export(), dry_run=True)[0]
-    assert without.signature_count == 0  # file says errors-only
+    assert without.signature_count == 0  # errors-only sees nothing here
 
-    with_slow, rows, _ = run_langfuse_sync(
-        export=_slow_export(),
-        client=client,
-        agent_id="test-agent",
-        state={},
+    with_slow, rows, _ = sync(
+        client,
+        {},
+        _slow_export(),
         dry_run=True,
         config=CaptureConfig(modes=frozenset({"slow"}), latency_ms=30_000),
     )

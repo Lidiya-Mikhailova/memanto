@@ -1000,35 +1000,88 @@ def _migrate_compact_metrics(provider: str, metrics: dict) -> dict:
     }
 
 
-def _migrate_langfuse_ledger() -> tuple[Path, dict]:
-    """The Langfuse sync ledger and its path.
+def _langfuse_project_key(options: dict) -> str:
+    """Identify which Langfuse project this request is about."""
+    from memanto.cli.migrate.langfuse_config import project_key
+
+    return project_key(
+        project_id=options.get("project_id"), api_key=options.get("api_key")
+    )
+
+
+def _migrate_langfuse_ledger(options: dict, agent_id: str = "preview") -> tuple[Path, str, dict]:
+    """The Langfuse sync ledger, its path, and this request's scope.
 
     Langfuse is a repeatable sync rather than a one-shot import, so the tile
     must reconcile against the same ledger the CLI uses — otherwise every
-    click would rewrite every signature.
+    click would rewrite every signature. The ledger is scoped by project and
+    destination agent so two projects, or two agents, never shadow each other.
     """
-    from memanto.cli.migrate.langfuse_state import load_state, state_path
+    from memanto.cli.migrate.langfuse_state import load_state, scope_key, state_path
 
     path = state_path(_config_manager.get_migrate_dir("langfuse"))
-    return path, load_state(path)
+    scope = scope_key(_langfuse_project_key(options), agent_id)
+    return path, scope, load_state(path, scope)
 
 
 def _migrate_langfuse_config(options: dict) -> Any:
-    """Build the tile's ``CaptureConfig``, rejecting bad modes with a 400.
+    """Build the tile's ``CaptureConfig`` from stored settings plus this request.
 
+    Stored per-project settings are the baseline so the tile matches whatever
+    the CLI was configured with; fields present on the request override them.
     Applied to file replays as well as live pulls, so the capture checkboxes
     mean the same thing either way.
     """
+    from memanto.cli.migrate.langfuse_config import (
+        ProjectConfig,
+        ScoreRuleError,
+        config_path,
+        load_project,
+        parse_score_rule,
+    )
     from memanto.cli.migrate.langfuse_rules import CaptureConfig, parse_capture_modes
 
+    base_dir = _config_manager.get_migrate_dir("langfuse")
+    stored = load_project(config_path(base_dir), _langfuse_project_key(options))
+
+    def rules(key: str, fallback: list) -> list:
+        raw = options.get(key)
+        if not raw:
+            return fallback
+        try:
+            return [parse_score_rule(str(item)) for item in raw]
+        except ScoreRuleError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    def number(key: str, fallback: float | None) -> float | None:
+        if options.get(key) in (None, ""):
+            return fallback
+        try:
+            return float(options[key])
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=400, detail=f"'{key}' must be a number."
+            )
+
     try:
-        return CaptureConfig(
-            modes=parse_capture_modes(options.get("capture")),
-            score_threshold=float(options.get("score_threshold", 0.5)),
-            latency_ms=float(options.get("latency_ms", 30_000.0)),
-            cost_usd=float(options.get("cost_usd", 1.0)),
+        merged = ProjectConfig(
+            capture=(
+                parse_capture_modes(options["capture"])
+                if options.get("capture")
+                else stored.capture
+            ),
+            score_fail_rules=rules("score_fail_rules", stored.score_fail_rules),
+            score_pass_rules=rules("score_pass_rules", stored.score_pass_rules),
+            latency_ms=number("latency_ms", stored.latency_ms),
+            latency_percentile=number(
+                "latency_percentile", stored.latency_percentile
+            ),
+            cost_usd=number("cost_usd", stored.cost_usd),
+            cost_percentile=number("cost_percentile", stored.cost_percentile),
+            group_by=options.get("group_by") or stored.group_by,
         )
-    except (ValueError, TypeError) as exc:
+        return CaptureConfig.from_project(merged)
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
@@ -1040,13 +1093,19 @@ def _migrate_langfuse_export(api_key: str, options: dict) -> tuple[str, dict]:
     )
     from memanto.cli.migrate.langfuse_state import last_synced_at
 
-    modes = _migrate_langfuse_config(options).modes
+    config = _migrate_langfuse_config(options)
+    discover = bool(options.get("discover"))
+
     since_days = options.get("since_days")
     since: datetime | None
     if since_days:
         since = datetime.now(timezone.utc) - timedelta(days=int(since_days))
+    elif discover:
+        since = None
     else:
-        _ledger_path, state = _migrate_langfuse_ledger()
+        _path, _scope, state = _migrate_langfuse_ledger(
+            options, str(options.get("agent_id") or "preview")
+        )
         since = last_synced_at(state)
 
     stamp = time.strftime("%Y%m%d_%H%M%S")
@@ -1060,10 +1119,9 @@ def _migrate_langfuse_export(api_key: str, options: dict) -> tuple[str, dict]:
                 options.get("host") or _config_manager.get_langfuse_host()
             ),
             since=since,
-            capture=set(modes),
-            score_threshold=float(options.get("score_threshold", 0.5)),
-            latency_ms=float(options.get("latency_ms", 30_000.0)),
-            cost_usd=float(options.get("cost_usd", 1.0)),
+            capture=set(config.modes),
+            config=config,
+            discover=discover,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -1185,10 +1243,10 @@ async def migrate_dry_run(body: dict, _: None = Depends(_require_local)):
         provider, body.get("file"), body.get("api_key"), body
     )
 
-    if provider == "langfuse":
-        from memanto.cli.migrate.runner import map_langfuse_export
+    if langfuse_config is not None:
+        from memanto.cli.migrate.langfuse_rules import build_rows
 
-        rows = map_langfuse_export(export, langfuse_config)
+        rows = build_rows(export, langfuse_config)
     else:
         rows = map_export(provider, export)
     src_count = source_count(provider, export)
@@ -1203,16 +1261,22 @@ async def migrate_dry_run(body: dict, _: None = Depends(_require_local)):
     # Langfuse reconciles against a ledger, so the preview must answer "what
     # would change", not "what would be written" — a re-sync is mostly no-ops.
     plan_counts: dict[str, int] = {}
+    warnings: list[str] = []
     if provider == "langfuse":
         from memanto.cli.migrate.langfuse_state import reconcile
+        from memanto.cli.migrate.runner import langfuse_warnings
 
-        _ledger_path, state = _migrate_langfuse_ledger()
+        _path, _scope, state = _migrate_langfuse_ledger(
+            body, str(body.get("agent_id") or "preview")
+        )
         plan = reconcile(rows, state)
         plan_counts = {
             "new": len(plan.new_rows),
             "changed": len(plan.updates),
             "unchanged": plan.unchanged,
         }
+        matched = sum(int(row.get("occurrences") or 0) for row in rows)
+        warnings = langfuse_warnings(export, rows, matched, langfuse_config)
 
     sample = []
     for row in rows[:5]:
@@ -1238,6 +1302,69 @@ async def migrate_dry_run(body: dict, _: None = Depends(_require_local)):
         "savings": savings,
         "batch_count": (len(rows) + 99) // 100,
         "plan": plan_counts,
+        "warnings": warnings,
+    }
+
+
+@router.post("/api/ui/migrate/langfuse/discover")
+async def migrate_langfuse_discover(body: dict, _: None = Depends(_require_local)):
+    """Report what is actually in a Langfuse project, so the user can configure it.
+
+    Score names, value ranges, and per-operation latency/cost are all
+    project-specific, so the tile shows the user their own data rather than
+    asking them to guess at thresholds. Writes nothing.
+    """
+    from memanto.cli.migrate.langfuse_discover import discover
+
+    source_label, export = _migrate_load_or_export(
+        "langfuse", body.get("file"), body.get("api_key"), {**body, "discover": True}
+    )
+    report = discover(export)
+    report["source_label"] = source_label
+    return report
+
+
+@router.post("/api/ui/migrate/langfuse/config")
+async def migrate_langfuse_config(body: dict, _: None = Depends(_require_local)):
+    """Read or persist per-project Langfuse capture settings.
+
+    ``{"action": "save", ...}`` stores the supplied settings for the project
+    the credential belongs to; anything else just reads them back.
+    """
+    from memanto.cli.migrate.langfuse_config import (
+        ProjectConfig,
+        config_path,
+        load_project,
+        save_project,
+    )
+
+    base_dir = _config_manager.get_migrate_dir("langfuse")
+    path = config_path(base_dir)
+    key = _langfuse_project_key(body)
+
+    if str(body.get("action") or "").lower() == "save":
+        config = _migrate_langfuse_config(body)
+        save_project(
+            path,
+            key,
+            ProjectConfig(
+                capture=config.modes,
+                score_fail_rules=list(config.score_fail_rules),
+                score_pass_rules=list(config.score_pass_rules),
+                latency_ms=config.latency_ms,
+                latency_percentile=config.latency_percentile,
+                cost_usd=config.cost_usd,
+                cost_percentile=config.cost_percentile,
+                group_by=config.group_by,
+            ),
+        )
+
+    stored = load_project(path, key)
+    return {
+        "project_key": key,
+        "config": stored.as_dict(),
+        "unconfigured": stored.unconfigured_modes(),
+        "path": str(path),
     }
 
 
@@ -1284,7 +1411,7 @@ async def migrate_import(body: dict, _: None = Depends(_require_local)):
             # signatures in place instead of duplicating them.
             from memanto.cli.migrate.langfuse_state import save_state
 
-            ledger_path, state = _migrate_langfuse_ledger()
+            ledger_path, scope, state = _migrate_langfuse_ledger(body, str(agent_id))
             summary, _rows, _plan = run_langfuse_sync(
                 export=export,
                 client=client,
@@ -1294,7 +1421,7 @@ async def migrate_import(body: dict, _: None = Depends(_require_local)):
                 config=langfuse_config,
                 on_progress=None,
             )
-            save_state(ledger_path, state)
+            save_state(ledger_path, state, scope)
         else:
             summary, _rows = run_migration(
                 provider=provider,

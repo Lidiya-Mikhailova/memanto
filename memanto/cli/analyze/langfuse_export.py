@@ -29,10 +29,18 @@ from typing import Any
 
 import httpx
 
+from memanto.cli.migrate.langfuse_rules import CAPTURE_MODES
+
 DEFAULT_HOST = "https://cloud.langfuse.com"
 DEFAULT_PAGE_SIZE = 500
 DEFAULT_WINDOW_DAYS = 7
 REQUEST_TIMEOUT_S = 60.0
+
+# Page-size ceilings differ per endpoint and are enforced server-side with a
+# 400, so each fetch clamps to its own. v2 observations allows up to 1000;
+# v3 scores rejects anything over 100.
+MAX_LIMIT_OBSERVATIONS = 1000
+MAX_LIMIT_SCORES = 100
 
 # Guard against an unbounded sweep on a busy project. Each page is up to
 # DEFAULT_PAGE_SIZE rows, so this caps one run at ~100k observations.
@@ -47,7 +55,11 @@ MAX_SCORED_TRACES = 200
 # cost; `io` carries the input/output that error text is extracted from.
 OBSERVATION_FIELDS = "core,basic,time,io,metadata,model,usage,metrics,trace_context"
 
-CAPTURE_MODES = ("errors", "low_score", "slow", "costly", "success")
+# v3 scores omit their trace linkage unless `subject` is requested — without
+# it every score comes back unattached and no score rule can ever match.
+# (`core` carries name/value/dataType; valid groups are core, details,
+# subject, annotation.)
+SCORE_FIELDS = "core,subject"
 
 # Modes that need every observation in the window, not just the errored ones:
 # latency and cost are not server-side filterable, so they are classified
@@ -95,12 +107,25 @@ def _client(api_key: str, host: str) -> httpx.Client:
     )
 
 
+US_HOST = "https://us.cloud.langfuse.com"
+
+
 def _get_json(
     client: httpx.Client, path: str, params: dict[str, Any] | None = None
 ) -> Any:
     resp = client.get(path, params=params or {})
     if resp.status_code >= 400:
-        raise RuntimeError(f"GET {path} -> {resp.status_code}: {resp.text[:500]}")
+        message = f"GET {path} -> {resp.status_code}: {resp.text[:500]}"
+        # Langfuse Cloud is regional and keys are not valid across regions, so
+        # a US-region project hit against the EU default fails as "invalid
+        # credentials" — which sends people hunting for a key problem instead.
+        if resp.status_code == 401 and str(client.base_url).rstrip("/") == DEFAULT_HOST:
+            message += (
+                f"\n\nIf your project is on Langfuse Cloud US, the keys are only "
+                f"valid there — retry with --host {US_HOST} "
+                f"(or set LANGFUSE_HOST)."
+            )
+        raise RuntimeError(message)
     return resp.json() if resp.content else {}
 
 
@@ -198,7 +223,7 @@ def fetch_observations(
         client,
         "/api/public/v2/observations",
         params,
-        page_size=page_size,
+        page_size=min(page_size, MAX_LIMIT_OBSERVATIONS),
         on_progress=on_progress,
         label="observations",
     )
@@ -208,34 +233,53 @@ def fetch_scores(
     client: httpx.Client,
     *,
     from_time: datetime,
-    value_min: float | None = None,
-    value_max: float | None = None,
     page_size: int = DEFAULT_PAGE_SIZE,
     on_progress: Callable[[str], None] | None = None,
 ) -> list[dict[str, Any]]:
-    """Fetch score rows, bounded by a numeric range."""
-    params: dict[str, Any] = {"fromTimestamp": from_time.isoformat()}
-    if value_min is not None:
-        params["valueMin"] = value_min
-    if value_max is not None:
-        params["valueMax"] = value_max
+    """Fetch every score row in the window.
 
+    Deliberately unfiltered. Langfuse scores may be numeric, categorical,
+    boolean, or text, with user-defined names and ranges and no convention for
+    whether higher is better, so there is no server-side value filter that
+    would be correct in general. Which scores mean "failure" is decided
+    client-side by the user's rules, and discovery needs the full set anyway.
+    """
     return paginate(
         client,
         "/api/public/v3/scores",
-        params,
-        page_size=page_size,
+        {"fromTimestamp": from_time.isoformat(), "fields": SCORE_FIELDS},
+        page_size=min(page_size, MAX_LIMIT_SCORES),
         on_progress=on_progress,
         label="scores",
     )
 
 
-def _trace_ids_from_scores(scores: list[dict[str, Any]]) -> list[str]:
+def _traces_matching_rules(
+    scores: list[dict[str, Any]], config: Any | None
+) -> list[str]:
+    """Trace ids whose scores the user's rules flag, in first-seen order.
+
+    Returns nothing when no rules are configured — which is correct: without a
+    rule there is no way to know which scores mean failure, and guessing would
+    write wrong memories.
+    """
+    if config is None:
+        return []
+
+    from memanto.cli.migrate.langfuse_rules import (
+        score_modes_by_trace,
+        score_trace_id,
+    )
+
+    matched = score_modes_by_trace(scores, config)
+    if not matched:
+        return []
+
     seen: set[str] = set()
     ordered: list[str] = []
     for score in scores:
-        trace_id = score.get("traceId")
-        if isinstance(trace_id, str) and trace_id and trace_id not in seen:
+        trace_id = score_trace_id(score)
+        if trace_id in matched and trace_id not in seen:
             seen.add(trace_id)
             ordered.append(trace_id)
     return ordered
@@ -262,9 +306,8 @@ def run_langfuse_export(
     host: str = DEFAULT_HOST,
     since: datetime | None = None,
     capture: set[str] | None = None,
-    score_threshold: float = 0.5,
-    latency_ms: float = 30_000.0,
-    cost_usd: float = 1.0,
+    config: Any | None = None,
+    discover: bool = False,
     page_size: int = DEFAULT_PAGE_SIZE,
     on_progress: Callable[[str], None] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
@@ -280,16 +323,18 @@ def run_langfuse_export(
         Every observation in the window (latency and cost are not
         server-side filterable); ``langfuse_rules`` classifies them.
     ``low_score`` / ``success``
-        Scores below/above *score_threshold*, then the observations of the
-        traces those scores point at.
+        Every score in the window, then the observations of whichever traces
+        the user's score rules match.
 
-    *latency_ms* and *cost_usd* are not fetch filters — they are applied
-    client-side by ``langfuse_rules`` — but they are recorded in the export
-    summary so replaying the file with ``--file`` reproduces the same mapping.
+    Latency and cost budgets are not fetch filters — Langfuse cannot filter on
+    them server-side, so ``langfuse_rules`` applies them client-side.
+
+    Set *discover* to pull an unfiltered sample of observations and every
+    score, for ``langfuse_discover.discover`` to summarize.
 
     Returns the written file path and the full export dict.
     """
-    modes = set(capture or {"errors"})
+    modes = set(capture or (config.modes if config is not None else {"errors"}))
     unknown = modes - set(CAPTURE_MODES)
     if unknown:
         raise ValueError(
@@ -299,7 +344,7 @@ def run_langfuse_export(
     if not modes:
         raise ValueError("At least one capture mode is required.")
 
-    page_size = max(1, min(page_size, 1000))
+    page_size = max(1, page_size)
     host = normalize_host(host)
     to_time = datetime.now(timezone.utc)
     from_time = since or (to_time - timedelta(days=DEFAULT_WINDOW_DAYS))
@@ -310,7 +355,29 @@ def run_langfuse_export(
     with _client(api_key, host) as client:
         window = f"{from_time.date()} → {to_time.date()}"
 
-        if modes & _UNFILTERED_MODES:
+        if discover:
+            # Discovery inspects the shape of the data, so it must not
+            # pre-filter: an unfiltered sweep plus every score.
+            if on_progress:
+                on_progress(f"Sampling observations and scores ({window})...")
+            observations.extend(
+                fetch_observations(
+                    client,
+                    from_time=from_time,
+                    to_time=to_time,
+                    page_size=page_size,
+                    on_progress=on_progress,
+                )
+            )
+            scores.extend(
+                fetch_scores(
+                    client,
+                    from_time=from_time,
+                    page_size=page_size,
+                    on_progress=on_progress,
+                )
+            )
+        elif modes & _UNFILTERED_MODES:
             # One unfiltered sweep also covers `errors`, so don't re-fetch.
             if on_progress:
                 on_progress(f"Fetching all observations ({window})...")
@@ -337,28 +404,23 @@ def run_langfuse_export(
                 )
             )
 
-        for mode in sorted(modes & _SCORE_MODES):
-            if mode == "low_score":
-                bounds: dict[str, float] = {"value_max": score_threshold}
-                described = f"below {score_threshold}"
-            else:
-                bounds = {"value_min": score_threshold}
-                described = f"at or above {score_threshold}"
-
+        if not discover and modes & _SCORE_MODES:
             if on_progress:
-                on_progress(f"Fetching scores {described}...")
-            mode_scores = fetch_scores(
-                client,
-                from_time=from_time,
-                page_size=page_size,
-                on_progress=on_progress,
-                **bounds,  # type: ignore[arg-type]
+                on_progress("Fetching scores...")
+            scores.extend(
+                fetch_scores(
+                    client,
+                    from_time=from_time,
+                    page_size=page_size,
+                    on_progress=on_progress,
+                )
             )
-            for score in mode_scores:
-                score["capture_mode"] = mode
-            scores.extend(mode_scores)
 
-            trace_ids = _trace_ids_from_scores(mode_scores)[:MAX_SCORED_TRACES]
+            # Only hydrate traces the user's rules actually flag. Without
+            # rules nothing can match, so nothing is fetched — and the caller
+            # reports the mode as unconfigured rather than silently empty.
+            matched = _traces_matching_rules(scores, config)
+            trace_ids = matched[:MAX_SCORED_TRACES]
             if trace_ids and on_progress:
                 on_progress(f"Hydrating {len(trace_ids)} scored traces...")
             for trace_id in trace_ids:
@@ -383,9 +445,7 @@ def run_langfuse_export(
             "capture_modes": sorted(modes),
             "from_time": from_time.isoformat(),
             "to_time": to_time.isoformat(),
-            "score_threshold": score_threshold,
-            "latency_ms": latency_ms,
-            "cost_usd": cost_usd,
+            "discover": discover,
             "page_size": page_size,
         },
         "observations": observations,

@@ -487,33 +487,15 @@ def map_okf(export: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-# --------------------------------------------------------------------------
-# Langfuse
-# --------------------------------------------------------------------------
-
-
-def map_langfuse(export: dict[str, Any]) -> list[dict[str, Any]]:
-    """Map a Langfuse export to grouped Memanto memory payloads.
-
-    Unlike the other providers this is not row-per-row: Langfuse rows are
-    observability events, and one incident produces thousands of them. The
-    grouping and payload rules live in ``langfuse_rules`` because the live
-    callback in the ``langfuse-memanto`` package shares them.
-
-    Imported inside the function so ``langfuse_rules`` can import this
-    module's footer helpers at module level without a cycle.
-    """
-    from memanto.cli.migrate.langfuse_rules import build_rows
-
-    return build_rows(export)
-
-
+# Langfuse is deliberately absent: its rows are observability events, not
+# memories, so one incident collapses into a single grouped payload rather
+# than mapping row-for-row. That needs the user's capture settings, which
+# this registry's signature cannot carry — see ``langfuse_rules.build_rows``.
 MAPPERS: dict[str, Callable[[dict[str, Any]], list[dict[str, Any]]]] = {
     "mem0": map_mem0,
     "letta": map_letta,
     "supermemory": map_supermemory,
     "okf": map_okf,
-    "langfuse": map_langfuse,
 }
 
 

@@ -81,14 +81,17 @@ class LangfuseSyncSummary:
     updated: int = 0
     failed: int = 0
     batches: int = 0
+    matched_count: int = 0
     type_counts: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "provider": self.provider,
             "observation_count": self.observation_count,
             "signature_count": self.signature_count,
+            "matched_count": self.matched_count,
             "new": self.new,
             "changed": self.changed,
             "unchanged": self.unchanged,
@@ -98,25 +101,40 @@ class LangfuseSyncSummary:
             "batches": self.batches,
             "type_counts": self.type_counts,
             "errors": self.errors[:20],
+            "warnings": self.warnings,
         }
 
 
-def map_langfuse_export(
-    export: dict[str, Any], config: Any | None = None
-) -> list[dict[str, Any]]:
-    """Map a Langfuse export, optionally overriding the capture settings.
+def langfuse_warnings(
+    export: dict[str, Any],
+    rows: list[dict[str, Any]],
+    matched: int,
+    config: Any,
+) -> list[str]:
+    """Non-fatal problems the user should see before trusting the numbers.
 
-    ``map_export`` reads the capture config off the export's own summary,
-    which is right for a live pull but wrong for a ``--file`` replay: there
-    the caller's ``--capture``/threshold choices must win, or the flags would
-    silently do nothing.
+    A mode that is switched on but has no rule or budget captures nothing;
+    saying so is the difference between "no problems found" and "never
+    actually looked".
     """
-    if config is None:
-        return map_export("langfuse", export)
+    from memanto.cli.migrate.langfuse_rules import cardinality_warning, has_cost_data
 
-    from memanto.cli.migrate.langfuse_rules import build_rows
+    warnings: list[str] = []
 
-    return build_rows(export, config)
+    for mode, reason in config.unconfigured_modes().items():
+        warnings.append(f"'{mode.replace('_', '-')}' captured nothing: {reason}")
+    if "costly" in config.modes and not has_cost_data(
+        export.get("observations") or []
+    ):
+        warnings.append(
+            "'costly' captured nothing: no observation in this window carries "
+            "cost data. Self-hosted Langfuse needs model pricing configured."
+        )
+
+    cardinality = cardinality_warning(matched, len(rows))
+    if cardinality:
+        warnings.append(cardinality)
+    return warnings
 
 
 def run_langfuse_sync(
@@ -126,7 +144,7 @@ def run_langfuse_sync(
     agent_id: str,
     state: dict[str, Any],
     dry_run: bool,
-    config: Any | None = None,
+    config: Any,
     on_progress: Callable[[str], None] | None = None,
 ) -> tuple[LangfuseSyncSummary, list[dict[str, Any]], Reconciliation]:
     """Group, reconcile, and (optionally) write one Langfuse sync.
@@ -135,20 +153,26 @@ def run_langfuse_sync(
     honour the ledger — writing through ``run_migration`` instead would
     duplicate every signature on the second run.
 
-    *config* is an optional ``CaptureConfig`` overriding what the export
-    recorded. Mutates *state* in place; the caller persists it with
-    ``save_state``.
+    *config* is the caller's ``CaptureConfig``; it is required so that a
+    ``--file`` replay maps with the user's current settings rather than
+    whatever the saved export happened to be pulled with. Mutates *state* in
+    place; the caller persists it with ``save_state``.
     """
-    rows = map_langfuse_export(export, config)
+    from memanto.cli.migrate.langfuse_rules import build_rows
+
+    rows = build_rows(export, config)
     plan = reconcile(rows, state)
 
+    matched = sum(int(row.get("occurrences") or 0) for row in rows)
     summary = LangfuseSyncSummary(
         observation_count=len(export.get("observations") or []),
         signature_count=len(rows),
+        matched_count=matched,
         new=len(plan.new_rows),
         changed=len(plan.updates),
         unchanged=plan.unchanged,
         type_counts=type_breakdown(rows),
+        warnings=langfuse_warnings(export, rows, matched, config),
     )
 
     if dry_run:

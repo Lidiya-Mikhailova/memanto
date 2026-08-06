@@ -11,13 +11,17 @@ This module keeps ``~/.memanto/migrate/langfuse/state.json``:
 
     {
       "version": 1,
-      "last_synced_at": "2026-08-04T09:12:33+00:00",
-      "signatures": {
-        "3f9a1c2b7d04": {
-          "memory_id": "…",
-          "fingerprint": "…",
-          "occurrences": 412,
-          "last_seen": "2026-08-04T08:59:01+00:00"
+      "scopes": {
+        "<project key>::<agent id>": {
+          "last_synced_at": "2026-08-04T09:12:33+00:00",
+          "signatures": {
+            "3f9a1c2b7d04": {
+              "memory_id": "…",
+              "fingerprint": "…",
+              "occurrences": 412,
+              "last_seen": "2026-08-04T08:59:01+00:00"
+            }
+          }
         }
       }
     }
@@ -27,6 +31,18 @@ unseen signatures are written, known signatures whose payload changed are
 updated in place via ``SdkClient.update_memory``, and unchanged ones are
 skipped. The fingerprint covers the rendered content and confidence, so
 "changed" means "the memory would actually read differently".
+
+**Scoping.** The ledger is keyed by Langfuse project *and* destination agent.
+A signature written to agent A tells us nothing about agent B, and two
+Langfuse projects can produce identical signatures for unrelated faults. A
+single flat ledger would mark such a signature "already synced" and skip a
+write the destination never received — silent data loss that only appears
+once someone syncs more than one project or agent.
+
+One JSON file rather than a file per scope, or a markdown log: this is
+bookkeeping the code owns, not prose anyone reads. A single file keeps every
+scope's write atomic and makes lookup a dict access, while the human-readable
+narrative of what was remembered already lives in the session summaries.
 """
 
 from __future__ import annotations
@@ -55,10 +71,6 @@ class Reconciliation:
     updates: list[dict[str, Any]] = field(default_factory=list)
     unchanged: int = 0
 
-    @property
-    def total(self) -> int:
-        return len(self.new_rows) + len(self.updates) + self.unchanged
-
 
 def state_path(base_dir: Path) -> Path:
     """Ledger location — a sibling of the timestamped per-run directories."""
@@ -82,42 +94,63 @@ def fingerprint(row: dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
-def load_state(path: Path) -> dict[str, Any]:
-    """Read the ledger, returning an empty one when absent or unreadable.
+def scope_key(project_key: str, agent_id: str) -> str:
+    """Ledger key for one (Langfuse project, destination agent) pair."""
+    return f"{project_key or 'default'}::{agent_id or 'default'}"
 
-    A corrupt ledger must not block a sync — the worst case of starting from
-    empty is re-writing memories that already exist, which is visible and
-    fixable, whereas refusing to sync is not.
+
+def _read_scopes(path: Path) -> dict[str, Any]:
+    """Read every scope out of the ledger file.
+
+    Tolerates absence and corruption: a corrupt ledger must not block a sync.
+    The worst case of starting from empty is re-writing memories that already
+    exist, which is visible and fixable, whereas refusing to sync is not.
     """
-    empty: dict[str, Any] = {
-        "version": STATE_VERSION,
-        "last_synced_at": None,
-        "signatures": {},
-    }
     if not path.exists():
-        return empty
+        return {}
     try:
         loaded = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return empty
+        return {}
     if not isinstance(loaded, dict):
-        return empty
+        return {}
+    scopes = loaded.get("scopes")
+    return scopes if isinstance(scopes, dict) else {}
 
-    signatures = loaded.get("signatures")
+
+def load_state(path: Path, scope: str) -> dict[str, Any]:
+    """Read one scope's ledger."""
+    raw = _read_scopes(path).get(scope)
+    signatures = raw.get("signatures") if isinstance(raw, dict) else None
     return {
-        "version": loaded.get("version", STATE_VERSION),
-        "last_synced_at": loaded.get("last_synced_at"),
+        "version": STATE_VERSION,
+        "scope": scope,
+        "last_synced_at": raw.get("last_synced_at") if isinstance(raw, dict) else None,
         "signatures": signatures if isinstance(signatures, dict) else {},
     }
 
 
-def save_state(path: Path, state: dict[str, Any]) -> Path:
-    """Persist the ledger, stamping the sync time."""
+def save_state(path: Path, state: dict[str, Any], scope: str | None = None) -> Path:
+    """Persist one scope's ledger, leaving other scopes untouched."""
+    scope = scope or state["scope"]
     state["version"] = STATE_VERSION
+    state["scope"] = scope
     state["last_synced_at"] = datetime.now(timezone.utc).isoformat()
+
+    scopes = _read_scopes(path)
+    scopes[scope] = {
+        "last_synced_at": state["last_synced_at"],
+        "signatures": state.get("signatures") or {},
+    }
+
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(state, indent=2, ensure_ascii=False, default=str),
+        json.dumps(
+            {"version": STATE_VERSION, "scopes": scopes},
+            indent=2,
+            ensure_ascii=False,
+            default=str,
+        ),
         encoding="utf-8",
     )
     return path
@@ -205,10 +238,7 @@ def record_written(
 
 def record_updated(state: dict[str, Any], update: dict[str, Any]) -> None:
     """Refresh the ledger entry after a successful in-place update."""
-    signatures = state.setdefault("signatures", {})
-    entry = signatures.get(update["signature"])
-    if not isinstance(entry, dict):
-        return
+    entry = state["signatures"][update["signature"]]
     entry["fingerprint"] = update["fingerprint"]
     entry["occurrences"] = update.get("occurrences", entry.get("occurrences", 0))
     entry["last_seen"] = datetime.now(timezone.utc).isoformat()

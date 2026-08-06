@@ -27,6 +27,7 @@ from typing import Any, cast
 
 import typer
 from rich.panel import Panel
+from rich.table import Table
 
 from memanto.app.utils.errors import (
     InvalidSessionTokenError,
@@ -81,7 +82,7 @@ from memanto.cli.commands._shared import (
     get_client,
     migrate_app,
 )
-from memanto.cli.migrate import langfuse_state
+from memanto.cli.migrate import langfuse_config, langfuse_discover, langfuse_state
 from memanto.cli.migrate.langfuse_rules import CaptureConfig, parse_capture_modes
 from memanto.cli.migrate.okf_loader import load_okf_bundle
 from memanto.cli.migrate.runner import (
@@ -697,6 +698,141 @@ def _parse_capture_modes(raw: list[str] | None) -> frozenset[str]:
         _error(str(exc))
 
 
+def _parse_rules(raw: list[str] | None) -> list[langfuse_config.ScoreRule]:
+    """Turn ``--score-fail 'correctness<0.7'`` into rules, or fail loudly."""
+    rules = []
+    for item in raw or []:
+        try:
+            rules.append(langfuse_config.parse_score_rule(item))
+        except langfuse_config.ScoreRuleError as exc:
+            _error(str(exc))
+    return rules
+
+
+def _resolve_langfuse_config(
+    *,
+    base_dir: Path,
+    key: str,
+    capture: list[str] | None,
+    score_fail: list[str] | None,
+    score_pass: list[str] | None,
+    latency_ms: float | None,
+    latency_percentile: float | None,
+    cost_usd: float | None,
+    cost_percentile: float | None,
+    group_by: str | None,
+    save: bool,
+) -> langfuse_config.ProjectConfig:
+    """Merge stored per-project settings with this run's flags.
+
+    Stored settings are the baseline so a user configures a project once;
+    flags override for a single run, and ``--save`` promotes them.
+    """
+    cfg_path = langfuse_config.config_path(base_dir)
+    stored = langfuse_config.load_project(cfg_path, key)
+
+    merged = langfuse_config.ProjectConfig(
+        capture=_parse_capture_modes(capture) if capture else stored.capture,
+        score_fail_rules=_parse_rules(score_fail) or stored.score_fail_rules,
+        score_pass_rules=_parse_rules(score_pass) or stored.score_pass_rules,
+        latency_ms=latency_ms if latency_ms is not None else stored.latency_ms,
+        latency_percentile=(
+            latency_percentile
+            if latency_percentile is not None
+            else stored.latency_percentile
+        ),
+        cost_usd=cost_usd if cost_usd is not None else stored.cost_usd,
+        cost_percentile=(
+            cost_percentile if cost_percentile is not None else stored.cost_percentile
+        ),
+        group_by=group_by or stored.group_by,
+    )
+
+    if save:
+        langfuse_config.save_project(cfg_path, key, merged)
+        console.print(f"[green]  ✓ Saved capture settings for project '{key}'[/green]")
+    return merged
+
+
+def _render_discovery(report: dict[str, Any]) -> None:
+    """Print what's actually in the user's project so they can choose budgets."""
+    window = report.get("window", {})
+    console.print(
+        Panel.fit(
+            f"[{BOLD_PRIMARY}]Langfuse project discovery[/{BOLD_PRIMARY}]\n"
+            f"[dim]{window.get('observation_count', 0)} observations, "
+            f"{window.get('score_count', 0)} scores[/dim]",
+            border_style=PRIMARY,
+        )
+    )
+
+    scores = report.get("scores") or []
+    if scores:
+        table = Table(title="Scores", box=None, header_style=BOLD_PRIMARY)
+        for col in ("Name", "Type", "Count", "Observed", "Suggested rule"):
+            table.add_column(col, overflow="fold")
+        for row in scores:
+            observed = (
+                f"{row.get('min')} … {row.get('max')}"
+                if "min" in row
+                else ", ".join(row.get("categories") or [])
+            )
+            table.add_row(
+                row["name"],
+                row["data_type"],
+                str(row["count"]),
+                observed,
+                row["suggestion"],
+            )
+        console.print(table)
+    else:
+        console.print("[dim]  No scores in this window.[/dim]")
+
+    operations = report.get("operations") or []
+    if operations:
+        table = Table(
+            title="Latency & cost by operation", box=None, header_style=BOLD_PRIMARY
+        )
+        for col in ("Operation", "Count", "p50 ms", "p95 ms", "p99 ms", "cost p95"):
+            table.add_column(col, overflow="fold")
+        for row in operations:
+            table.add_row(
+                row["name"],
+                str(row["count"]),
+                str(row["latency_p50"]),
+                str(row["latency_p95"]),
+                str(row["latency_p99"]),
+                f"${row['cost_p95']}" if report.get("has_cost_data") else "—",
+            )
+        console.print(table)
+
+    errors = report.get("errors") or {}
+    labels = errors.get("labels") or []
+    if labels:
+        table = Table(
+            title=(
+                f"Error labels — {errors.get('errored_observations', 0)} errors "
+                f"grouped into {errors.get('distinct_signatures', 0)} signatures"
+            ),
+            box=None,
+            header_style=BOLD_PRIMARY,
+        )
+        table.add_column("Label", overflow="fold")
+        table.add_column("Count")
+        for row in labels:
+            table.add_row(row["label"], str(row["count"]))
+        console.print(table)
+
+    for note in report.get("notes") or []:
+        _warn(note)
+
+    console.print(
+        "\n[dim]Set what you want with --capture / --score-fail / "
+        "--latency-percentile etc. and add --save to store it for this "
+        "project.[/dim]"
+    )
+
+
 @migrate_app.command("langfuse")
 def migrate_langfuse(
     api_key: str | None = typer.Option(
@@ -740,20 +876,60 @@ def migrate_langfuse(
             f"or {DEFAULT_WINDOW_DAYS} days on a first run."
         ),
     ),
-    score_threshold: float = typer.Option(
-        0.5,
-        "--score-threshold",
-        help="Score below this is 'low-score'; at or above it is 'success'.",
+    score_fail: list[str] | None = typer.Option(
+        None,
+        "--score-fail",
+        help=(
+            "Rule marking a score as a failure; repeatable. "
+            "e.g. 'correctness<0.7', 'toxicity>0.3', 'thumbs_up=false', "
+            "'tone in rude,evasive'. Run --discover to see your score names."
+        ),
     ),
-    latency_ms: float = typer.Option(
-        30_000.0,
+    score_pass: list[str] | None = typer.Option(
+        None,
+        "--score-pass",
+        help="Rule marking a score as a success; repeatable. Same syntax.",
+    ),
+    latency_ms: float | None = typer.Option(
+        None,
         "--latency-ms",
-        help="Observations slower than this qualify for 'slow'.",
+        help="Fixed latency budget in ms; slower observations become 'slow'.",
     ),
-    cost_usd: float = typer.Option(
-        1.0,
+    latency_percentile: float | None = typer.Option(
+        None,
+        "--latency-percentile",
+        help=(
+            "Latency budget as a percentile of each operation's own traffic "
+            "(e.g. 95). Self-calibrating alternative to --latency-ms."
+        ),
+    ),
+    cost_usd: float | None = typer.Option(
+        None,
         "--cost-usd",
-        help="Observations costing more than this qualify for 'costly'.",
+        help="Fixed cost budget in USD; pricier observations become 'costly'.",
+    ),
+    cost_percentile: float | None = typer.Option(
+        None,
+        "--cost-percentile",
+        help="Cost budget as a percentile of each operation's own traffic.",
+    ),
+    group_by: str | None = typer.Option(
+        None,
+        "--group-by",
+        help=(
+            "Group on a stable field instead of the error message, e.g. "
+            "'metadata.error_code'. Use when your messages don't group well."
+        ),
+    ),
+    discover: bool = typer.Option(
+        False,
+        "--discover",
+        help="Report this project's score names, latency/cost spread, and error labels. Writes nothing.",
+    ),
+    save: bool = typer.Option(
+        False,
+        "--save",
+        help="Store the supplied capture settings for this Langfuse project.",
     ),
     dry_run: bool = typer.Option(
         False,
@@ -763,31 +939,90 @@ def migrate_langfuse(
 ):
     """Sync Langfuse observability signal into the active (or selected) agent.
 
-    Errors, failed evals, and latency/cost anomalies become memories. Rows are
-    grouped into one memory per *signature* rather than one per occurrence, so
-    a thousand identical failures become a single memory whose confidence
+    Errors, failed evals, and latency/cost anomalies become memories, grouped
+    into one memory per *signature* rather than one per occurrence, so a
+    thousand identical failures become a single memory whose confidence
     reflects how often it happened.
 
-    The run is idempotent: a ledger at
-    ``~/.memanto/migrate/langfuse/state.json`` remembers which signature maps
-    to which memory, so re-running updates existing memories in place instead
-    of duplicating them. It syncs once per invocation — there is no scheduler.
+    Only ``errors`` works out of the box — it is the one signal every Langfuse
+    project records identically. Score names, their ranges, and what counts as
+    slow or expensive are all project-specific, so those modes stay inert (and
+    say so) until you supply a rule or a budget. Start with ``--discover``.
+
+    Settings are stored per Langfuse project in
+    ``~/.memanto/migrate/langfuse/config.json`` when you pass ``--save``, and
+    the sync ledger beside it is keyed by project *and* target agent, so
+    re-running updates existing memories instead of duplicating them.
 
     Examples:
-        memanto migrate langfuse --dry-run
-        memanto migrate langfuse --capture errors --capture slow
-        memanto migrate langfuse --since-days 30 --agent my-agent
+        memanto migrate langfuse --discover
+        memanto migrate langfuse --capture errors,slow --latency-percentile 95 --save
+        memanto migrate langfuse --score-fail 'correctness<0.7' --capture low-score
+        memanto migrate langfuse --group-by metadata.error_code --dry-run
     """
-    modes = _parse_capture_modes(capture)
-
     base_dir = config_manager.get_migrate_dir("langfuse")
-    ledger_path = langfuse_state.state_path(base_dir)
-    state = langfuse_state.load_state(ledger_path)
-
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_dir = base_dir / stamp
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    def progress(msg: str) -> None:
+        console.print(f"  [{BRIGHT}]…[/{BRIGHT}] {msg}")
+
+    resolved_host = normalize_host(host or config_manager.get_langfuse_host())
+    credential = None
+    if file is None:
+        credential = _resolve_provider_key("langfuse", api_key)
+        if host:
+            config_manager.set_langfuse_host(resolved_host)
+
+    key = langfuse_config.project_key(api_key=credential)
+    project = _resolve_langfuse_config(
+        base_dir=base_dir,
+        key=key,
+        capture=capture,
+        score_fail=score_fail,
+        score_pass=score_pass,
+        latency_ms=latency_ms,
+        latency_percentile=latency_percentile,
+        cost_usd=cost_usd,
+        cost_percentile=cost_percentile,
+        group_by=group_by,
+        save=save,
+    )
+    capture_config = CaptureConfig.from_project(project)
+
+    # ---- Discovery: look, report, write nothing. -------------------------
+    if discover:
+        if file is not None:
+            export = load_export(file)
+        else:
+            progress(f"Sampling {resolved_host}...")
+            try:
+                _, export = run_langfuse_export(
+                    cast(str, credential),
+                    run_dir,
+                    host=resolved_host,
+                    since=(
+                        datetime.now(timezone.utc) - timedelta(days=since_days)
+                        if since_days
+                        else None
+                    ),
+                    discover=True,
+                    on_progress=progress,
+                )
+            except ValueError as exc:
+                _error(str(exc))
+            except Exception as exc:
+                _error(f"Langfuse discovery failed: {exc}")
+        _render_discovery(langfuse_discover.discover(export))
+        return
+
+    target_agent = None if dry_run else _resolve_target_agent(agent)
+    ledger_path = langfuse_state.state_path(base_dir)
+    scope = langfuse_state.scope_key(key, target_agent or "preview")
+    state = langfuse_state.load_state(ledger_path, scope)
+
+    modes = project.capture
     mode_label = "Dry run" if dry_run else "Sync"
     console.print(
         Panel.fit(
@@ -796,11 +1031,6 @@ def migrate_langfuse(
             border_style=PRIMARY,
         )
     )
-
-    def progress(msg: str) -> None:
-        console.print(f"  [{BRIGHT}]…[/{BRIGHT}] {msg}")
-
-    target_agent = None if dry_run else _resolve_target_agent(agent)
 
     # Window: an explicit --since-days wins, else resume from the last sync.
     previous_sync = langfuse_state.last_synced_at(state)
@@ -817,26 +1047,18 @@ def migrate_langfuse(
         except Exception as exc:
             _error(f"Failed to load Langfuse export: {exc}")
     else:
-        resolved_host = normalize_host(host or config_manager.get_langfuse_host())
-        key = _resolve_provider_key("langfuse", api_key)
-        if host:
-            config_manager.set_langfuse_host(resolved_host)
         window = (
-            f"since {since.isoformat()}"
-            if since
-            else f"last {DEFAULT_WINDOW_DAYS} days"
+            f"since {since.isoformat()}" if since else f"last {DEFAULT_WINDOW_DAYS} days"
         )
         progress(f"Pulling from {resolved_host} ({window})")
         try:
             _, export = run_langfuse_export(
-                key,
+                cast(str, credential),
                 run_dir,
                 host=resolved_host,
                 since=since,
                 capture=set(modes),
-                score_threshold=score_threshold,
-                latency_ms=latency_ms,
-                cost_usd=cost_usd,
+                config=capture_config,
                 on_progress=progress,
             )
         except ValueError as exc:
@@ -851,21 +1073,16 @@ def migrate_langfuse(
         agent_id=cast(str, target_agent or ""),
         state=state,
         dry_run=dry_run,
-        # Explicit so a --file replay honours these flags rather than whatever
-        # the saved export happened to be pulled with.
-        config=CaptureConfig(
-            modes=modes,
-            score_threshold=score_threshold,
-            latency_ms=latency_ms,
-            cost_usd=cost_usd,
-        ),
+        # Explicit so a --file replay honours these settings rather than
+        # whatever the saved export happened to be pulled with.
+        config=capture_config,
         on_progress=progress,
     )
     preview_path = write_preview(rows, run_dir / "mapped_preview.json")
 
     if not dry_run:
         # Saved even when nothing changed, so the cursor still advances.
-        langfuse_state.save_state(ledger_path, state)
+        langfuse_state.save_state(ledger_path, state, scope)
 
     type_lines = (
         ", ".join(f"{k}: {v}" for k, v in sorted(summary.type_counts.items())) or "—"
@@ -894,9 +1111,11 @@ def migrate_langfuse(
     body_lines.append("")
     body_lines.append(f"[dim]Run dir:[/dim] {run_dir}")
     body_lines.append(f"[dim]Mapped preview:[/dim] {preview_path}")
-    body_lines.append(f"[dim]Sync ledger:[/dim] {ledger_path}")
+    body_lines.append(f"[dim]Sync ledger:[/dim] {ledger_path}  [dim]({scope})[/dim]")
     if previous_sync:
         body_lines.append(f"[dim]Previous sync:[/dim] {previous_sync.isoformat()}")
+    for warning in summary.warnings:
+        body_lines.append(f"[yellow]![/yellow] {warning}")
     if summary.errors:
         body_lines.append(
             f"[red]First error:[/red] {summary.errors[0]}  "

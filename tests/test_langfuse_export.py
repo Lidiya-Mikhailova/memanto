@@ -112,6 +112,38 @@ def test_paginate_stops_at_the_page_cap():
     assert len(client.calls) == MAX_PAGES
 
 
+def test_each_endpoint_clamps_limit_to_its_own_ceiling(tmp_path, monkeypatch):
+    """v3 scores rejects limit>100 with a 400; v2 observations allows 1000.
+
+    Regression: a single global clamp of 1000 made every score fetch fail.
+    """
+    from memanto.cli.analyze.langfuse_export import (
+        MAX_LIMIT_OBSERVATIONS,
+        MAX_LIMIT_SCORES,
+    )
+
+    client = FakeClient([{"data": [], "meta": {}}, {"data": [], "meta": {}}])
+    monkeypatch.setattr(langfuse_export, "_client", lambda *a, **k: client)
+
+    run_langfuse_export("pk:sk", tmp_path, discover=True, page_size=1000)
+
+    limits = {path: params["limit"] for path, params in client.calls}
+    assert limits["/api/public/v2/observations"] == MAX_LIMIT_OBSERVATIONS
+    assert limits["/api/public/v3/scores"] == MAX_LIMIT_SCORES
+    assert MAX_LIMIT_SCORES <= 100
+
+
+def test_default_page_size_is_within_every_endpoint_ceiling(tmp_path, monkeypatch):
+    client = FakeClient([{"data": [], "meta": {}}, {"data": [], "meta": {}}])
+    monkeypatch.setattr(langfuse_export, "_client", lambda *a, **k: client)
+
+    run_langfuse_export("pk:sk", tmp_path, discover=True)
+
+    for path, params in client.calls:
+        ceiling = 100 if "scores" in path else 1000
+        assert params["limit"] <= ceiling, f"{path} would 400"
+
+
 def test_paginate_sends_the_page_size_as_limit():
     client = FakeClient([{"data": [], "meta": {}}])
     paginate(client, "/x", {"level": "ERROR"}, page_size=250)
@@ -147,27 +179,80 @@ def test_latency_modes_sweep_unfiltered(tmp_path, monkeypatch):
     assert "level" not in client.calls[0][1]
 
 
-def test_score_modes_hydrate_the_traces_they_point_at(tmp_path, monkeypatch):
+def _score_config(rule="correctness<0.7"):
+    from memanto.cli.migrate.langfuse_config import parse_score_rule
+    from memanto.cli.migrate.langfuse_rules import CaptureConfig
+
+    return CaptureConfig(
+        modes=frozenset({"low_score"}), score_fail_rules=(parse_score_rule(rule),)
+    )
+
+
+def test_score_modes_hydrate_only_the_traces_a_rule_matches(tmp_path, monkeypatch):
     client = FakeClient(
         [
-            # scores page
+            # scores page: one failing, one passing (live `subject` linkage)
             {
-                "data": [{"id": "s1", "traceId": "trace-7", "value": 0.1}],
+                "data": [
+                    {"id": "s1", "subject": {"kind": "trace", "id": "trace-7"},
+                     "name": "correctness", "value": 0.1},
+                    {"id": "s2", "subject": {"kind": "trace", "id": "trace-8"},
+                     "name": "correctness", "value": 0.95},
+                ],
                 "meta": {"nextCursor": None},
             },
-            # hydrated observations for trace-7
             {"data": [{"id": "o1", "traceId": "trace-7"}], "meta": {}},
         ]
     )
     monkeypatch.setattr(langfuse_export, "_client", lambda *a, **k: client)
 
-    _, export = run_langfuse_export("pk:sk", tmp_path, capture={"low_score"})
+    _, export = run_langfuse_export(
+        "pk:sk", tmp_path, capture={"low_score"}, config=_score_config()
+    )
 
-    paths = [call[0] for call in client.calls]
-    assert "/api/public/v3/scores" in paths[0]
-    assert client.calls[0][1]["valueMax"] == 0.5
-    assert client.calls[1][1]["traceId"] == "trace-7"
-    assert export["scores"][0]["capture_mode"] == "low_score"
+    assert client.calls[0][0] == "/api/public/v3/scores"
+    # Scores are fetched unfiltered: no server-side value filter is correct in
+    # general, because ranges and direction are user-defined.
+    assert "valueMax" not in client.calls[0][1]
+    # `subject` must be requested or the linkage comes back null.
+    assert "subject" in client.calls[0][1]["fields"]
+    hydrated = [c[1].get("traceId") for c in client.calls if c[1].get("traceId")]
+    assert hydrated == ["trace-7"], "only the rule-matching trace should be fetched"
+    assert len(export["scores"]) == 2
+
+
+def test_score_modes_fetch_nothing_without_rules(tmp_path, monkeypatch):
+    """Without a rule there is no way to know which scores mean failure."""
+    client = FakeClient(
+        [
+            {
+                "data": [{"id": "s1", "traceId": "trace-7", "value": 0.1}],
+                "meta": {"nextCursor": None},
+            }
+        ]
+    )
+    monkeypatch.setattr(langfuse_export, "_client", lambda *a, **k: client)
+
+    run_langfuse_export("pk:sk", tmp_path, capture={"low_score"})
+
+    assert not [c for c in client.calls if c[1].get("traceId")]
+
+
+def test_discover_pulls_unfiltered_observations_and_all_scores(tmp_path, monkeypatch):
+    client = FakeClient(
+        [
+            {"data": [{"id": "o1", "level": "DEFAULT"}], "meta": {}},
+            {"data": [{"id": "s1", "name": "correctness", "value": 0.4}], "meta": {}},
+        ]
+    )
+    monkeypatch.setattr(langfuse_export, "_client", lambda *a, **k: client)
+
+    _, export = run_langfuse_export("pk:sk", tmp_path, discover=True)
+
+    assert "level" not in client.calls[0][1]
+    assert client.calls[1][0] == "/api/public/v3/scores"
+    assert export["summary"]["discover"] is True
+    assert len(export["observations"]) == 1 and len(export["scores"]) == 1
 
 
 def test_export_writes_a_replayable_file(tmp_path, monkeypatch):
@@ -181,16 +266,11 @@ def test_export_writes_a_replayable_file(tmp_path, monkeypatch):
         host="https://us.cloud.langfuse.com",
         since=since,
         capture={"errors"},
-        latency_ms=1234.0,
-        cost_usd=5.0,
     )
 
     assert path.name == "langfuse_export.json"
     on_disk = json.loads(path.read_text(encoding="utf-8"))
     assert on_disk["api_base"] == "https://us.cloud.langfuse.com"
-    # Thresholds ride along so a --file replay reproduces the same mapping.
-    assert on_disk["summary"]["latency_ms"] == 1234.0
-    assert on_disk["summary"]["cost_usd"] == 5.0
     assert on_disk["summary"]["capture_modes"] == ["errors"]
     assert export["summary"]["from_time"] == since.isoformat()
 

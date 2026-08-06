@@ -4821,7 +4821,15 @@
         function migrateInitialState() {
             return {
                 provider: null, source: 'file', file: '', apiKey: '', preview: null,
-                lf: { capture: ['errors'], host: '', publicKey: '', secretKey: '', sinceDays: '', scoreThreshold: 0.5, latencyMs: 30000, costUsd: 1 },
+                // Langfuse guarantees nothing about score meaning or what counts
+                // as slow/expensive, so every budget starts empty and the mode
+                // stays inert (and says so) until the user fills it in.
+                lf: {
+                    capture: ['errors'], host: '', publicKey: '', secretKey: '', sinceDays: '',
+                    scoreFail: '', scorePass: '',
+                    latencyMs: '', latencyPct: '', costUsd: '', costPct: '',
+                    groupBy: '', discovery: null, loadedFor: null,
+                },
             };
         }
 
@@ -4871,6 +4879,50 @@
             // Langfuse's whole point is the live sync; a file is only for replays.
             if (id === 'langfuse') S.migrate.source = 'api';
             renderMigrate();
+            // The tile must show whatever this project is already configured
+            // with — otherwise a sync started here would silently narrow
+            // settings saved from the CLI.
+            if (id === 'langfuse') loadLangfuseConfig();
+        }
+
+        // Langfuse capture settings are stored per project, shared with the
+        // CLI. Read them whenever the identified project could have changed.
+        async function loadLangfuseConfig() {
+            captureMigrateInputs();
+            const lf = S.migrate.lf;
+            const body = { provider: 'langfuse' };
+            if (lf.publicKey && lf.secretKey) body.api_key = `${lf.publicKey}:${lf.secretKey}`;
+            let res;
+            try {
+                res = await api('POST', '/api/ui/migrate/langfuse/config', body);
+            } catch { return; }   // no stored settings yet is not an error
+
+            if (res.project_key === lf.loadedFor) return;
+            const cfg = res.config || {};
+            lf.loadedFor = res.project_key;
+            lf.capture = (cfg.capture || ['errors']).map(m => m.replace(/_/g, '-'));
+            lf.scoreFail = (cfg.score_fail_rules || []).join('\n');
+            lf.scorePass = (cfg.score_pass_rules || []).join('\n');
+            lf.latencyMs = cfg.latency_ms ?? '';
+            lf.latencyPct = cfg.latency_percentile ?? '';
+            lf.costUsd = cfg.cost_usd ?? '';
+            lf.costPct = cfg.cost_percentile ?? '';
+            lf.groupBy = cfg.group_by || '';
+            S.migrate.preview = null;
+            renderMigrate();
+        }
+
+        async function saveLangfuseConfig() {
+            const body = migrateBody();
+            if (!body) return;
+            body.action = 'save';
+            try {
+                const res = await api('POST', '/api/ui/migrate/langfuse/config', body);
+                S.migrate.lf.loadedFor = res.project_key;
+                toast(`Saved capture settings for project ${res.project_key}`, 'success');
+            } catch (e) {
+                toast('Save failed: ' + e.message, 'error');
+            }
         }
 
         function toggleLfCapture(mode) {
@@ -4893,24 +4945,101 @@
                     ${picked.has(m.id) ? '✓ ' : ''}${escHtml(m.label)}
                 </button>
             `).join('');
-            const needsScore = picked.has('low-score') || picked.has('success');
-            const num = (id, label, value, step, hint) => `
+
+            const field = (id, label, value, hint, opts = {}) => `
                 <div>
                     <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px">${escHtml(label)}</label>
-                    <input id="${id}" type="number" step="${step}" value="${value}" oninput="invalidateMigratePreview()" style="width:100%;font-family:var(--font-mono);font-size:12px">
-                    <div style="font-size:11px;color:var(--text-dim);margin-top:4px">${escHtml(hint)}</div>
+                    <input id="${id}" ${opts.number ? `type="number" step="${opts.step || 1}"` : ''}
+                           placeholder="${escHtml(opts.placeholder || '')}" value="${escHtml(String(value ?? ''))}"
+                           oninput="invalidateMigratePreview()" style="width:100%;font-family:var(--font-mono);font-size:12px">
+                    <div style="font-size:11px;color:var(--text-dim);margin-top:4px">${hint}</div>
                 </div>`;
+
+            // Each budget is a pair: a fixed number, or a percentile of this
+            // project's own traffic. Neither is filled in by default because
+            // no value would be right across projects.
+            const budget = (mode, absId, absLabel, absStep, pctId, absVal, pctVal) => picked.has(mode) ? `
+                <div style="grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:12px;border:1px solid var(--border);border-radius:6px">
+                    ${field(absId, absLabel, absVal, 'Fixed budget', { number: true, step: absStep })}
+                    ${field(pctId, '…or percentile', pctVal, 'e.g. 95 — calibrated per operation from your own traffic', { number: true, step: 1, placeholder: '95' })}
+                </div>` : '';
+
+            const scoreHelp = 'One rule per line — e.g. <code>correctness&lt;0.7</code>, <code>toxicity&gt;0.3</code>, <code>thumbs_up=false</code>, <code>tone in rude,evasive</code>';
+            const scoreArea = (id, label, value, hint) => `
+                <div style="grid-column:1/-1">
+                    <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px">${escHtml(label)}</label>
+                    <textarea id="${id}" rows="2" oninput="invalidateMigratePreview()"
+                              style="width:100%;font-family:var(--font-mono);font-size:12px">${escHtml(value || '')}</textarea>
+                    <div style="font-size:11px;color:var(--text-dim);margin-top:4px">${hint}</div>
+                </div>`;
+
             return `
                 <div style="margin-top:18px">
                     <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:8px">What to capture</label>
                     <div class="mig-source-tabs" style="flex-wrap:wrap">${chips}</div>
+                    <div style="font-size:11px;color:var(--text-dim);margin-top:8px">
+                        Only <strong>Errors</strong> works with no setup. Score names, ranges, and what counts as
+                        slow or costly are specific to your project — run <strong>Discover</strong> to see yours.
+                    </div>
                 </div>
-                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:16px">
-                    ${num('migLfSinceDays', 'Look back (days)', escHtml(String(lf.sinceDays ?? '')), '1', 'Blank = since the last sync')}
-                    ${needsScore ? num('migLfScore', 'Score threshold', lf.scoreThreshold, '0.05', 'Below = failed eval, above = worked') : ''}
-                    ${picked.has('slow') ? num('migLfLatency', 'Latency budget (ms)', lf.latencyMs, '1000', 'Slower than this is an anomaly') : ''}
-                    ${picked.has('costly') ? num('migLfCost', 'Cost budget (USD)', lf.costUsd, '0.1', 'Pricier than this is an anomaly') : ''}
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:16px">
+                    ${field('migLfSinceDays', 'Look back (days)', lf.sinceDays, 'Blank = since the last sync', { number: true })}
+                    ${field('migLfGroupBy', 'Group by field (optional)', lf.groupBy, 'e.g. metadata.error_code — use when messages group poorly', { placeholder: 'metadata.error_code' })}
+                    ${picked.has('low-score') ? scoreArea('migLfScoreFail', 'Scores that mean failure', lf.scoreFail, scoreHelp) : ''}
+                    ${picked.has('success') ? scoreArea('migLfScorePass', 'Scores that mean success', lf.scorePass, scoreHelp) : ''}
+                    ${budget('slow', 'migLfLatency', 'Latency budget (ms)', 1000, 'migLfLatencyPct', lf.latencyMs, lf.latencyPct)}
+                    ${budget('costly', 'migLfCost', 'Cost budget (USD)', 0.1, 'migLfCostPct', lf.costUsd, lf.costPct)}
+                </div>
+                ${lf.discovery ? renderLangfuseDiscovery(lf.discovery) : ''}`;
+        }
+
+        function renderLangfuseDiscovery(report) {
+            const win = report.window || {};
+            const scoreRows = (report.scores || []).map(s => `
+                <tr><td>${escHtml(s.name)}</td><td>${escHtml(s.data_type)}</td><td>${s.count}</td>
+                    <td>${escHtml(s.min !== undefined ? `${s.min} … ${s.max}` : (s.categories || []).join(', '))}</td>
+                    <td style="font-family:var(--font-mono);font-size:11px">${escHtml(s.suggestion)}</td></tr>`).join('');
+            const opRows = (report.operations || []).map(o => `
+                <tr><td>${escHtml(o.name)}</td><td>${o.count}</td><td>${o.latency_p50}</td>
+                    <td>${o.latency_p95}</td><td>${o.latency_p99}</td>
+                    <td>${report.has_cost_data ? '$' + o.cost_p95 : '—'}</td></tr>`).join('');
+            const errRows = ((report.errors || {}).labels || []).map(e => `
+                <tr><td>${escHtml(e.label)}</td><td>${e.count}</td></tr>`).join('');
+            const notes = (report.notes || []).map(n =>
+                `<div class="mig-error-banner" style="margin-top:8px">${escHtml(n)}</div>`).join('');
+            const table = (title, head, rows) => rows ? `
+                <div style="margin-top:18px">
+                    <div class="card-label" style="margin-bottom:6px">${escHtml(title)}</div>
+                    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+                        <thead><tr style="text-align:left;color:var(--text-dim)">${head.map(h => `<th style="padding:4px 8px">${escHtml(h)}</th>`).join('')}</tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table></div>
+                </div>` : '';
+
+            return `
+                <div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--border)">
+                    <div class="card-label">Discovery · ${win.observation_count || 0} observations, ${win.score_count || 0} scores</div>
+                    ${table('Scores', ['Name', 'Type', 'Count', 'Observed', 'Suggested rule'], scoreRows)}
+                    ${table('Latency & cost by operation', ['Operation', 'Count', 'p50 ms', 'p95 ms', 'p99 ms', 'cost p95'], opRows)}
+                    ${table('Error labels', ['Label', 'Count'], errRows)}
+                    ${notes}
                 </div>`;
+        }
+
+        async function runLangfuseDiscover() {
+            const body = migrateBody();
+            if (!body) return;
+            body.discover = true;
+            setMigStep('load', 'Sampling your Langfuse project...');
+            try {
+                const res = await api('POST', '/api/ui/migrate/langfuse/discover', body);
+                S.migrate.lf.discovery = res;
+                S.migrate.preview = null;
+                renderMigrate();
+            } catch (e) {
+                renderMigrate();
+                toast('Discovery failed: ' + e.message, 'error');
+            }
         }
 
         function renderMigrateSource(st) {
@@ -4934,7 +5063,7 @@
                 ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
                         <div>
                             <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px">Public key  ·  <a href="${p.docs}" target="_blank" style="color:var(--accent);text-decoration:none">where?</a></label>
-                            <input id="migLfPublic" placeholder="pk-lf-..." value="${escHtml(st.lf.publicKey || '')}" oninput="invalidateMigratePreview()" style="width:100%;font-family:var(--font-mono);font-size:12px">
+                            <input id="migLfPublic" placeholder="pk-lf-..." value="${escHtml(st.lf.publicKey || '')}" oninput="invalidateMigratePreview()" onchange="loadLangfuseConfig()" style="width:100%;font-family:var(--font-mono);font-size:12px">
                         </div>
                         <div>
                             <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px">Secret key</label>
@@ -4965,6 +5094,8 @@
                     ${fileActive ? fileField : apiField}
                     ${isLangfuse ? renderLangfuseOptions(st) : ''}
                     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+                        ${isLangfuse ? `<button class="btn btn-secondary" onclick="runLangfuseDiscover()" title="See this project's scores, latency spread, and error labels">Discover</button>
+                        <button class="btn btn-secondary" onclick="saveLangfuseConfig()" title="Store these capture settings for this Langfuse project (shared with the CLI)">Save settings</button>` : ''}
                         <button class="btn btn-secondary" onclick="runMigratePreview()">Preview (dry run)</button>
                         <button class="btn btn-primary" onclick="runMigrateImport()" ${hasActiveSession() ? '' : 'disabled style="opacity:0.5;cursor:not-allowed"'}>${isLangfuse ? 'Sync now' : 'Import now'}</button>
                     </div>
@@ -5012,9 +5143,17 @@
             grab('migLfSecret', 'secretKey');
             grab('migLfHost', 'host');
             grab('migLfSinceDays', 'sinceDays');
-            grab('migLfScore', 'scoreThreshold', Number);
-            grab('migLfLatency', 'latencyMs', Number);
-            grab('migLfCost', 'costUsd', Number);
+            grab('migLfGroupBy', 'groupBy');
+            grab('migLfScoreFail', 'scoreFail');
+            grab('migLfScorePass', 'scorePass');
+            grab('migLfLatency', 'latencyMs');
+            grab('migLfLatencyPct', 'latencyPct');
+            grab('migLfCost', 'costUsd');
+            grab('migLfCostPct', 'costPct');
+        }
+
+        function lfRules(text) {
+            return (text || '').split('\n').map(s => s.trim()).filter(Boolean);
         }
 
         function migrateBody() {
@@ -5041,12 +5180,20 @@
                 body.api_key = st.apiKey;
             }
 
-            // Capture settings shape the mapping, so send them for file replays too.
+            // Capture settings shape the mapping, so send them for file replays
+            // too. Empty values are omitted so stored per-project settings show
+            // through instead of being overwritten with blanks.
             if (isLangfuse) {
-                body.capture = st.lf.capture;
-                body.score_threshold = st.lf.scoreThreshold;
-                body.latency_ms = st.lf.latencyMs;
-                body.cost_usd = st.lf.costUsd;
+                const lf = st.lf;
+                body.capture = lf.capture;
+                const put = (key, value) => { if (value !== '' && value != null) body[key] = value; };
+                put('latency_ms', lf.latencyMs);
+                put('latency_percentile', lf.latencyPct);
+                put('cost_usd', lf.costUsd);
+                put('cost_percentile', lf.costPct);
+                put('group_by', lf.groupBy);
+                if (lfRules(lf.scoreFail).length) body.score_fail_rules = lfRules(lf.scoreFail);
+                if (lfRules(lf.scorePass).length) body.score_pass_rules = lfRules(lf.scorePass);
             }
             return body;
         }
@@ -5150,6 +5297,16 @@
                 : `Imported ${sum.imported} memories from ${body.provider}`, 'success');
         }
 
+        // A mode that is switched on but has no rule or budget captures nothing.
+        // Saying so is the difference between "no problems found" and "never
+        // actually looked".
+        function migWarnings(warnings) {
+            if (!warnings || !warnings.length) return '';
+            return warnings.map(w =>
+                `<div class="mig-error-banner" style="margin-top:10px">${escHtml(w)}</div>`
+            ).join('');
+        }
+
         // ----- Preview (after dry-run) ----------------------------------
         function renderMigratePreview(preview) {
             const t = preview.type_counts || {};
@@ -5191,6 +5348,7 @@
                         ${savingsTiles}
                     </div>
                     <div class="mig-type-chips">${chips || '<span style="color:var(--text-dim);font-size:12px">No type breakdown</span>'}</div>
+                    ${migWarnings(preview.warnings)}
                     <div style="margin-top:22px">
                         <div class="card-label" style="margin-bottom:6px">Sample (first 5)</div>
                         ${sample}
@@ -5234,6 +5392,7 @@
                         ${savingsTiles}
                     </div>
                     <div class="mig-type-chips">${chips}</div>
+                    ${migWarnings(sum.warnings)}
                     ${errBox}
                     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:22px">
                         <button class="btn btn-secondary" onclick="goToPage('explorer')">Open Explorer</button>

@@ -99,9 +99,37 @@ def test_error_class_extraction():
     assert error_class("everything is fine") is None
 
 
-def test_unparseable_error_still_gets_a_label():
-    _, label = signature_for(observation(statusMessage="it just broke"), "errors")
-    assert label == "UnclassifiedError"
+def test_free_form_messages_get_a_readable_label():
+    """Langfuse's statusMessage follows no template — its own docs' examples
+    are plain sentences, so a label must not depend on exception-class syntax."""
+    cases = {
+        "Model returned malformed output": "Model returned malformed output",
+        "Operation failed with unexpected input": "Operation failed with unexpected input",
+        "context deadline exceeded": "context deadline exceeded",
+        "connection reset by peer": "connection reset by peer",
+    }
+    for message, expected in cases.items():
+        _, label = signature_for(observation(statusMessage=message), "errors")
+        assert label == expected
+
+
+def test_label_prefers_an_exception_class_when_present():
+    _, label = signature_for(
+        observation(statusMessage="RateLimitError: quota exceeded"), "errors"
+    )
+    assert label == "RateLimitError"
+
+
+def test_label_truncates_and_never_empties():
+    _, long_label = signature_for(
+        observation(statusMessage="x" * 500), "errors"
+    )
+    assert len(long_label) <= 60
+
+    _, empty_label = signature_for(
+        {"name": "n", "level": "ERROR", "statusMessage": ""}, "errors"
+    )
+    assert empty_label == "Unlabelled failure"
 
 
 # --------------------------------------------------------------------------
@@ -123,10 +151,10 @@ def test_latency_falls_back_to_seconds_field():
     assert latency_ms(obs) == 2_500.0
 
 
-def test_cost_reads_total_then_sums_then_falls_back():
+def test_cost_reads_the_total_then_sums_the_parts():
     assert cost_usd(observation(costDetails={"total": 1.25, "input": 1.0})) == 1.25
     assert cost_usd(observation(costDetails={"input": 0.5, "output": 0.25})) == 0.75
-    assert cost_usd(observation(calculatedTotalCost=3.0)) == 3.0
+    # No cost data is 0.0, not an error — many projects never record cost.
     assert cost_usd(observation()) == 0.0
 
 
@@ -142,6 +170,46 @@ def test_error_level_classifies_as_errors():
 def test_non_error_observation_is_ignored_when_only_errors_captured():
     config = CaptureConfig(modes=frozenset({"errors"}))
     assert classify(observation(level="DEFAULT"), config) is None
+
+
+def test_thresholds_are_inert_until_the_user_sets_a_budget():
+    """No invented defaults: 30s and $1 are meaningless across projects."""
+    config = CaptureConfig(modes=frozenset({"slow", "costly"}))
+    very_slow = observation(
+        level="DEFAULT",
+        startTime="2026-08-01T12:00:00Z",
+        endTime="2026-08-01T13:00:00Z",
+        costDetails={"total": 500.0},
+    )
+
+    assert classify(very_slow, config) is None
+    assert set(config.unconfigured_modes()) == {"slow", "costly"}
+
+
+def test_percentile_budget_calibrates_against_the_projects_own_traffic():
+    from memanto.cli.migrate.langfuse_rules import build_baselines
+
+    config = CaptureConfig(modes=frozenset({"slow"}), latency_percentile=90)
+    # Nine fast calls and one outlier, all the same operation.
+    fast = [
+        observation(
+            id=f"f{i}",
+            level="DEFAULT",
+            startTime="2026-08-01T12:00:00Z",
+            endTime="2026-08-01T12:00:01Z",
+        )
+        for i in range(9)
+    ]
+    outlier = observation(
+        id="slow",
+        level="DEFAULT",
+        startTime="2026-08-01T12:00:00Z",
+        endTime="2026-08-01T12:00:30Z",
+    )
+    baselines = build_baselines(fast + [outlier], config)
+
+    assert classify(outlier, config, {}, baselines) == "slow"
+    assert classify(fast[0], config, {}, baselines) is None
 
 
 def test_slow_and_costly_thresholds():
@@ -170,14 +238,20 @@ def test_errors_outrank_slow_for_the_same_observation():
     assert classify(both, config) == "errors"
 
 
-def test_scores_drive_low_score_and_success():
-    config = CaptureConfig(modes=frozenset({"low_score", "success"}))
+def test_scores_drive_low_score_and_success_via_user_rules():
+    """Langfuse documents no direction convention, so the user's rule decides."""
+    from memanto.cli.migrate.langfuse_config import parse_score_rule
+    from memanto.cli.migrate.langfuse_rules import score_modes_by_trace
+
+    config = CaptureConfig(
+        modes=frozenset({"low_score", "success"}),
+        score_fail_rules=(parse_score_rule("correctness<0.7"),),
+        score_pass_rules=(parse_score_rule("correctness>=0.9"),),
+    )
     scores = [
         {"traceId": "trace-1", "name": "correctness", "value": 0.2},
         {"traceId": "trace-9", "name": "correctness", "value": 0.9},
     ]
-    from memanto.cli.migrate.langfuse_rules import score_modes_by_trace
-
     by_trace = score_modes_by_trace(scores, config)
 
     assert classify(observation(level="DEFAULT"), config, by_trace) == "low_score"
@@ -185,6 +259,71 @@ def test_scores_drive_low_score_and_success():
         classify(observation(level="DEFAULT", traceId="trace-9"), config, by_trace)
         == "success"
     )
+
+
+def test_scores_link_to_traces_through_subject():
+    """v3 scores carry linkage as subject:{kind,id}, not a flat traceId.
+
+    Regression: reading only `traceId` left every live score unattached, so
+    score rules silently matched nothing.
+    """
+    from memanto.cli.migrate.langfuse_config import parse_score_rule
+    from memanto.cli.migrate.langfuse_rules import score_modes_by_trace, score_trace_id
+
+    live_shape = {
+        "name": "user-thumbs",
+        "value": False,
+        "dataType": "BOOLEAN",
+        "subject": {"kind": "trace", "id": "trace-1"},
+    }
+    assert score_trace_id(live_shape) == "trace-1"
+
+    config = CaptureConfig(
+        modes=frozenset({"low_score"}),
+        score_fail_rules=(parse_score_rule("user-thumbs=false"),),
+    )
+    by_trace = score_modes_by_trace([live_shape], config)
+
+    assert by_trace["trace-1"]["capture_mode"] == "low_score"
+    assert classify(observation(level="DEFAULT"), config, by_trace) == "low_score"
+
+
+def test_non_trace_scoped_scores_are_skipped():
+    """A score on a session or dataset run has no observation to attach to."""
+    from memanto.cli.migrate.langfuse_rules import score_trace_id
+
+    assert score_trace_id({"subject": {"kind": "session", "id": "s1"}}) is None
+    assert score_trace_id({"subject": None}) is None
+    assert score_trace_id({"traceId": "flat-1"}) == "flat-1"
+
+
+def test_an_inverted_metric_is_handled_by_writing_the_rule_that_way():
+    """A high toxicity score is a failure — a global 'below X is bad' inverts this."""
+    from memanto.cli.migrate.langfuse_config import parse_score_rule
+    from memanto.cli.migrate.langfuse_rules import score_modes_by_trace
+
+    config = CaptureConfig(
+        modes=frozenset({"low_score"}),
+        score_fail_rules=(parse_score_rule("toxicity>0.3"),),
+    )
+    by_trace = score_modes_by_trace(
+        [{"traceId": "trace-1", "name": "toxicity", "value": 0.9}], config
+    )
+
+    assert classify(observation(level="DEFAULT"), config, by_trace) == "low_score"
+
+
+def test_scores_capture_nothing_without_rules():
+    """No rule means no way to know which scores mean failure — so, nothing."""
+    from memanto.cli.migrate.langfuse_rules import score_modes_by_trace
+
+    config = CaptureConfig(modes=frozenset({"low_score", "success"}))
+    by_trace = score_modes_by_trace(
+        [{"traceId": "trace-1", "name": "correctness", "value": 0.2}], config
+    )
+
+    assert by_trace == {}
+    assert "low_score" in config.unconfigured_modes()
 
 
 def test_thresholds_are_not_captured_when_mode_is_off():
@@ -303,6 +442,38 @@ def test_payload_carries_signature_and_count_for_reconciliation():
     assert payload["occurrences"] == 2
 
 
+def test_threshold_modes_get_distinct_self_describing_titles():
+    """Two modes on one operation must not produce two identical titles."""
+    from memanto.cli.migrate.langfuse_rules import CaptureConfig as CC
+
+    slow_obs = observation(
+        level="DEFAULT",
+        startTime="2026-08-01T12:00:00Z",
+        endTime="2026-08-01T12:00:45Z",
+    )
+    costly_obs = observation(id="c", level="DEFAULT", costDetails={"total": 9.0})
+
+    slow = to_memory_payload(
+        group_observations([slow_obs], CC(modes=frozenset({"slow"}), latency_ms=1))[0],
+        "https://x",
+    )
+    costly = to_memory_payload(
+        group_observations([costly_obs], CC(modes=frozenset({"costly"}), cost_usd=1))[0],
+        "https://x",
+    )
+
+    assert slow["title"] != costly["title"]
+    assert slow["title"].startswith("Slow: summarize_node")
+    assert costly["title"].startswith("Costly: summarize_node")
+    # The model belongs in the title as a qualifier, not as the subject.
+    assert "claude-opus-5" in slow["title"]
+
+
+def test_error_titles_still_lead_with_the_fault():
+    payload = to_memory_payload(group_observations([observation()], ALL_MODES)[0], "https://x")
+    assert payload["title"] == "RateLimitError in summarize_node"
+
+
 def test_capture_mode_maps_to_memory_type():
     config = CaptureConfig(modes=frozenset({"slow"}), latency_ms=1_000)
     slow = observation(
@@ -322,10 +493,63 @@ def test_capture_mode_maps_to_memory_type():
 # --------------------------------------------------------------------------
 
 
-def test_build_rows_reads_capture_config_from_the_export_summary():
+def test_group_by_pins_grouping_to_a_field_the_user_controls():
+    """The escape hatch for projects whose messages don't normalize well."""
+    config = CaptureConfig(modes=frozenset({"errors"}), group_by="metadata.error_code")
+    observations = [
+        observation(
+            id=f"o{i}",
+            statusMessage=f"totally unique text {i} with no shared shape",
+            metadata={"error_code": "E_QUOTA"},
+        )
+        for i in range(50)
+    ]
+
+    groups = group_observations(observations, config)
+
+    assert len(groups) == 1
+    assert groups[0].label == "E_QUOTA"
+    assert groups[0].count == 50
+
+
+def test_group_by_falls_back_when_the_field_is_missing():
+    config = CaptureConfig(modes=frozenset({"errors"}), group_by="metadata.error_code")
+    groups = group_observations([observation()], config)
+
+    assert len(groups) == 1
+    assert groups[0].label == "RateLimitError"
+
+
+def test_high_cardinality_grouping_is_reported():
+    from memanto.cli.migrate.langfuse_rules import cardinality_warning
+
+    assert cardinality_warning(100, 90) is not None
+    assert cardinality_warning(1000, 3) is None
+    # Too few rows to judge.
+    assert cardinality_warning(5, 5) is None
+
+
+def test_volatile_fragments_that_would_fork_signatures_are_normalized():
+    volatile = [
+        "Failed for user alice@corp.com",
+        "Failed for user bob@other.org",
+    ]
+    sigs = {
+        signature_for(observation(statusMessage=m), "errors")[0] for m in volatile
+    }
+    assert len(sigs) == 1
+
+    ips = {
+        signature_for(observation(statusMessage=f"refused by {ip}"), "errors")[0]
+        for ip in ("10.0.0.1", "192.168.44.9")
+    }
+    assert len(ips) == 1
+
+
+def test_build_rows_maps_an_export_with_the_callers_config():
     export = {
         "api_base": "https://self-hosted.example.com",
-        "summary": {"capture_modes": ["errors"], "score_threshold": 0.5},
+        "summary": {"capture_modes": ["errors"]},
         "observations": [
             observation(id="a"),
             observation(id="b", level="DEFAULT"),  # not captured
@@ -333,11 +557,12 @@ def test_build_rows_reads_capture_config_from_the_export_summary():
         "scores": [],
     }
 
-    rows = build_rows(export)
+    rows = build_rows(export, CaptureConfig(modes=frozenset({"errors"})))
 
     assert len(rows) == 1
     assert rows[0]["source_ref"].startswith("https://self-hosted.example.com")
 
 
 def test_build_rows_on_an_empty_export():
-    assert build_rows({"observations": [], "scores": [], "summary": {}}) == []
+    empty = {"observations": [], "scores": [], "summary": {}}
+    assert build_rows(empty, CaptureConfig(modes=frozenset({"errors"}))) == []
