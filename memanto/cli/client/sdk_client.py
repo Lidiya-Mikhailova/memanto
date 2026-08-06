@@ -1517,13 +1517,13 @@ class SdkClient:
     ) -> dict[str, list]:
         """Recall memories for every type, grouped by type.
 
-        Raises ``ConnectionError`` when *every* type recall fails (backend
-        unreachable) so callers don't overwrite a good export with nothing.
+        Raises ``ConnectionError`` when any type recall fails so callers don't
+        overwrite a good export with an incomplete snapshot.
         """
         from memanto.app.services.memory_export_service import MEMORY_TYPE_ORDER
 
         memories_by_type: dict[str, list] = {}
-        failed_types = 0
+        failed_types: list[str] = []
 
         for mem_type in MEMORY_TYPE_ORDER:
             try:
@@ -1536,13 +1536,16 @@ class SdkClient:
                 memories_by_type[mem_type] = result.get("memories", [])
             except Exception:
                 memories_by_type[mem_type] = []
-                failed_types += 1
+                failed_types.append(mem_type)
 
-        if failed_types == len(MEMORY_TYPE_ORDER):
+        if failed_types:
+            if len(failed_types) == len(MEMORY_TYPE_ORDER):
+                detail = "the backend appears unreachable"
+            else:
+                detail = f"failed types: {', '.join(failed_types)}"
             raise ConnectionError(
-                f"Failed to recall any memories for agent '{agent_id}' — "
-                "the backend appears unreachable. Refusing to write an "
-                "empty export."
+                f"Failed to recall a complete memory set for agent '{agent_id}' — "
+                f"{detail}. Refusing to write an incomplete export."
             )
         return memories_by_type
 
