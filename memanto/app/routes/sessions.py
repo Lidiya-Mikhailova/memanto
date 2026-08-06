@@ -33,7 +33,7 @@ router = APIRouter()
 # Import auth dependencies (avoid circular import)
 # Include memory operations sub-router
 # Commented to avoid triggering ruff linter
-from memanto.app.routes import memory  # noqa: E402
+from memanto.app.routes import agent_runs, memory  # noqa: E402
 from memanto.app.routes.auth_deps import (  # noqa: E402
     clear_session_cookie,
     get_current_session,
@@ -43,6 +43,7 @@ from memanto.app.routes.auth_deps import (  # noqa: E402
 )
 
 router.include_router(memory.router, prefix="/agents", tags=["Memory Operations"])
+router.include_router(agent_runs.router, prefix="/agents", tags=["Agent Tool Calling"])
 
 # Service instances
 agent_service = AgentService()

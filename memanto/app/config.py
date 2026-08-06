@@ -174,6 +174,9 @@ class Settings(BaseSettings):
     # UI Mode
     MEMANTO_UI_MODE: bool = False
 
+    # Moorcheh agent tool-calling runtime (private Docker image; secrets baked at build).
+    MOORCHEH_AGENT_IMAGE: str = "moorcheh/moorcheh-agent:latest"
+
     model_config = SettingsConfigDict(
         env_file=".env", case_sensitive=True, extra="ignore"
     )
