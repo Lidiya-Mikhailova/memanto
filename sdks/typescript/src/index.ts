@@ -447,9 +447,24 @@ export class Memanto {
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+    this.adoptRenewedSessionToken(res);
     if (!res.ok) throw await asError(res, `${method} ${path} failed`);
     if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
+  }
+
+  /**
+   * PR #1485 (server) proactively renews a near-expiry session and returns
+   * the replacement token in the X-Session-Token response header. Nothing
+   * previously read that header back on the client, so a renewed token was
+   * silently discarded. This picks it up on any response -- success or
+   * failure -- so the client stays authenticated without waiting for a 401.
+   */
+  private adoptRenewedSessionToken(res: Response): void {
+    const renewed = res.headers.get("x-session-token");
+    if (renewed) {
+      this.sessionToken = renewed;
+    }
   }
 
   private async requestMultipart<T = unknown>(
@@ -463,6 +478,7 @@ export class Memanto {
       headers: { "X-Session-Token": this.sessionToken ?? "" },
       body: form,
     });
+    this.adoptRenewedSessionToken(res);
     if (!res.ok) throw await asError(res, `POST ${path} failed`);
     return (await res.json()) as T;
   }

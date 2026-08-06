@@ -10,7 +10,10 @@ interface Recorded {
   body: string;
 }
 
-function startFakeApi(agentId = "test-agent"): Promise<{
+function startFakeApi(
+  agentId = "test-agent",
+  opts: { renewedTokenOnRemember?: string } = {},
+): Promise<{
   url: string;
   recorded: Recorded[];
   close: () => void;
@@ -28,8 +31,15 @@ function startFakeApi(agentId = "test-agent"): Promise<{
         });
 
         const url = req.url ?? "";
-        const reply = (status: number, payload: unknown) => {
-          res.writeHead(status, { "Content-Type": "application/json" });
+        const reply = (
+          status: number,
+          payload: unknown,
+          extraHeaders: Record<string, string> = {},
+        ) => {
+          res.writeHead(status, {
+            "Content-Type": "application/json",
+            ...extraHeaders,
+          });
           res.end(JSON.stringify(payload));
         };
 
@@ -63,16 +73,22 @@ function startFakeApi(agentId = "test-agent"): Promise<{
         if (url === `/api/v2/agents/${encodedAgentId}` && req.method === "DELETE")
           return reply(200, { agent_id: agentId, deleted: true });
         if (url === `/api/v2/agents/${encodedAgentId}/remember`)
-          return reply(200, {
-            memory_id: "mem-1",
-            agent_id: agentId,
-            session_id: "sess-1",
-            namespace: "memanto_agent_test_agent",
-            status: "queued",
-            provenance: "explicit_statement",
-            confidence: 0.9,
-            type: "fact",
-          });
+          return reply(
+            200,
+            {
+              memory_id: "mem-1",
+              agent_id: agentId,
+              session_id: "sess-1",
+              namespace: "memanto_agent_test_agent",
+              status: "queued",
+              provenance: "explicit_statement",
+              confidence: 0.9,
+              type: "fact",
+            },
+            opts.renewedTokenOnRemember
+              ? { "X-Session-Token": opts.renewedTokenOnRemember }
+              : {},
+          );
         if (url === `/api/v2/agents/${encodedAgentId}/recall`)
           return reply(200, {
             agent_id: agentId,
@@ -125,6 +141,39 @@ describe("Memanto", () => {
       r.url.endsWith("/remember"),
     );
     expect(remember?.headers["x-session-token"]).toBe("fake-token");
+  });
+
+  it("adopts a proactively renewed session token from a successful response", async () => {
+    // Simulates PR #1485: the server renews a near-expiry session and
+    // returns the replacement in the X-Session-Token response header, on an
+    // otherwise-successful (200) request -- no 401 involved anywhere.
+    const api = await startFakeApi("test-agent", {
+      renewedTokenOnRemember: "proactively-renewed-token",
+    });
+    cleanupFns.push(api.close);
+
+    const m = new Memanto({ agentId: "test-agent", baseUrl: api.url });
+    cleanupFns.push(() => m.close());
+
+    // First call: activates with "fake-token", then remembers. The
+    // response is a normal 200, but carries a renewed token in its header.
+    const first = await m.remember({ content: "Het likes coffee" });
+    expect(first).toMatchObject({ memory_id: "mem-1", status: "queued" });
+
+    // Second call: if the SDK adopted the renewed token, this request
+    // should use it -- without ever hitting a 401 or retrying.
+    const second = await m.remember({ content: "Het likes tea" });
+    expect(second).toMatchObject({ memory_id: "mem-1", status: "queued" });
+
+    const rememberCalls = api.recorded.filter((r) => r.url.endsWith("/remember"));
+    expect(rememberCalls).toHaveLength(2);
+    expect(rememberCalls[0]?.headers["x-session-token"]).toBe("fake-token");
+    expect(rememberCalls[1]?.headers["x-session-token"]).toBe(
+      "proactively-renewed-token",
+    );
+
+    const activations = api.recorded.filter((r) => r.url.endsWith("/activate"));
+    expect(activations).toHaveLength(1); // no reactivation needed -- proactive only
   });
 
   it("recalls with session token", async () => {
