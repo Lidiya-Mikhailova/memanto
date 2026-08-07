@@ -232,10 +232,13 @@ class MemantoLangfuseHandler(SpanProcessor):
                 "percentile budgets need a population and are ignored live. "
                 "Set --latency-ms to capture slow spans from the app."
             )
-        if "costly" in self._config.modes and self._config.cost_usd is None:
+        if "costly" in self._config.modes:
             logger.warning(
-                "langfuse-memanto: 'costly' has no absolute cost budget; "
-                "set --cost-usd to capture expensive spans from the app."
+                "langfuse-memanto: 'costly' only fires live if your app sets "
+                "cost_details on the observation itself. Langfuse otherwise "
+                "computes cost server-side after ingestion, where a span "
+                "processor cannot see it — run 'memanto migrate langfuse' to "
+                "capture cost anomalies."
             )
 
     def attach(self, tracer_provider: Any | None = None) -> MemantoLangfuseHandler:

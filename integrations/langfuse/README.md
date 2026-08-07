@@ -92,10 +92,12 @@ your app  ──▶  Langfuse SDK  ──▶  OTel TracerProvider  ──┬─�
 | Mode | Live | Why |
 |---|---|---|
 | `errors` | ✅ | The span carries its own level and status message |
-| `slow` | ✅ with `--latency-ms` | Percentile budgets need a population to calibrate against |
-| `costly` | ✅ with `--cost-usd` | Same |
+| `slow` | ✅ with an absolute `latency_ms` | Timing is on the span; percentile budgets need a population to calibrate against |
+| `costly` | ⚠️ only if your app sets `cost_details` | Langfuse otherwise computes cost **server-side after ingestion**, where a span processor cannot see it |
 | `low-score` | ❌ | Langfuse scores are attached *after* a trace ends |
 | `success` | ❌ | Same |
+
+Anything marked ❌ or ⚠️ is still captured by `memanto migrate langfuse`, which reads the enriched data back from the Langfuse API. The two paths share a ledger, so running both is safe.
 
 The handler logs a warning at startup for any configured mode it cannot honour. For score-driven capture, run `memanto migrate langfuse` periodically — it and the live handler share a ledger, so they compose safely.
 
