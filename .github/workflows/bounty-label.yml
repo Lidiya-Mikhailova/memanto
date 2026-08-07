@@ -5,14 +5,10 @@ name: Auto-label bounty PRs
 # the numbered label if it doesn't exist yet, so PRs submitted against an
 # active bounty are labeled automatically instead of relying on a
 # maintainer to do it by hand.
-#
-# The workflow_dispatch trigger runs the same logic across every open PR,
-# for backfilling PRs that were opened before this labeling existed.
 
 on:
   pull_request_target:
     types: [opened, edited, synchronize, reopened]
-  workflow_dispatch: {}
 
 permissions:
   pull-requests: write
@@ -104,17 +100,4 @@ jobs:
               });
             }
 
-            if (context.eventName === "workflow_dispatch") {
-              const prs = await github.paginate(github.rest.pulls.list, {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                state: "open",
-                per_page: 100,
-              });
-              core.info(`Backfilling labels across ${prs.length} open PR(s).`);
-              for (const pr of prs) {
-                await labelPr(pr);
-              }
-            } else {
-              await labelPr(context.payload.pull_request);
-            }
+            await labelPr(context.payload.pull_request);
