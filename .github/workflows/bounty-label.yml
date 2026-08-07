@@ -31,12 +31,31 @@ jobs:
                 });
               } catch (error) {
                 if (error.status === 404) {
-                  core.info(`Creating missing label "${name}".`);
+                  // A palette of visually distinct colors
+                  const palette = [
+                    "b60205", // red
+                    "0e8a16", // green
+                    "fbca04", // yellow
+                    "1d76db", // blue
+                    "5319e7", // purple
+                    "d93f0b", // orange
+                    "006b75", // teal
+                    "c5def5", // light blue
+                    "f9d0c4", // light pink
+                    "d4c5f9", // light purple
+                  ];
+                  
+                  // Extract bounty number to deterministically pick a color
+                  const match = name.match(/\d+/);
+                  const num = match ? parseInt(match[0], 10) : 0;
+                  const color = palette[num % palette.length];
+
+                  core.info(`Creating missing label "${name}" with color ${color}.`);
                   await github.rest.issues.createLabel({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
                     name,
-                    color: "fcf22a",
+                    color: color,
                   });
                 } else {
                   core.error(`Failed to check label "${name}": ${error.message}`);
