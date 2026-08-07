@@ -1,12 +1,12 @@
-name: Auto-label bounty PRs
+name: Auto-label Bounties and PRs
 
-# Labels any pull request that references a bounty issue with "bounty" plus
-# a per-issue "Bounty#N" label (N = the referenced issue number), creating
-# the numbered label if it doesn't exist yet, so PRs submitted against an
-# active bounty are labeled automatically instead of relying on a
-# maintainer to do it by hand.
+# Automatically assigns incremental "Bounty #N" labels to bounty issues.
+# Also labels any pull request that references a bounty issue with the
+# specific "Bounty #N" label from the issue.
 
 on:
+  issues:
+    types: [opened, edited]
   pull_request_target:
     types: [opened, edited, synchronize, reopened]
 
@@ -22,9 +22,81 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            // Matches "#123", "issue #123", "closes #123", "fixes #123",
-            // "resolves #123", "refs #123" (case-insensitive), anywhere in
-            // the PR title or body.
+            async function ensureLabelExists(name) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                });
+              } catch (error) {
+                if (error.status === 404) {
+                  core.info(`Creating missing label "${name}".`);
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name,
+                    color: "fcf22a",
+                  });
+                } else {
+                  core.error(`Failed to check label "${name}": ${error.message}`);
+                }
+              }
+            }
+
+            async function labelIssue(issue) {
+              const isMaintainer = ["OWNER", "MEMBER", "COLLABORATOR"].includes(issue.author_association);
+              const hasBountyInTitle = /bounty/i.test(issue.title);
+              
+              if (!isMaintainer || !hasBountyInTitle) {
+                return;
+              }
+
+              let existingSpecificBounty = null;
+
+              for (const label of issue.labels) {
+                const name = typeof label === "string" ? label : label.name;
+                if (/^bounty\s*#?\d+/i.test(name)) {
+                  existingSpecificBounty = name;
+                  break;
+                }
+              }
+
+              if (existingSpecificBounty) {
+                return;
+              }
+
+              const allLabels = await github.paginate(github.rest.issues.listLabelsForRepo, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100
+              });
+
+              let maxBountyNum = 0;
+              for (const label of allLabels) {
+                const match = label.name.match(/^bounty\s*#?(\d+)/i);
+                if (match) {
+                  const num = parseInt(match[1], 10);
+                  if (num > maxBountyNum) {
+                    maxBountyNum = num;
+                  }
+                }
+              }
+              
+              const nextBountyNumber = maxBountyNum + 1;
+              const newLabel = `Bounty #${nextBountyNumber}`;
+              
+              await ensureLabelExists(newLabel);
+
+              core.info(`Issue #${issue.number}: applying label ${newLabel}`);
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: [newLabel],
+              });
+            }
+
             async function labelPr(pr) {
               const text = `${pr.title}\n${pr.body ?? ""}`;
               const issueNumbers = new Set(
@@ -51,18 +123,17 @@ jobs:
                   // Skip closed issues so only "active" bounties apply.
                   if (issue.state !== "open") continue;
 
-                  const hasBountyLabel = issue.labels.some((label) => {
-                    const name = typeof label === "string" ? label : label.name;
-                    return name === "bounty" || /^Bounty#\d+$/.test(name);
-                  });
-                  if (!hasBountyLabel) continue;
+                  let existingSpecificBounty = null;
 
-                  // Every bounty issue gets its own "Bounty#<issue number>"
-                  // label so PRs against different bounties are visually
-                  // distinguishable, instead of all showing the generic
-                  // "bounty" label.
-                  bountyLabels.add("bounty");
-                  bountyLabels.add(`Bounty#${number}`);
+                  for (const label of issue.labels) {
+                    const name = typeof label === "string" ? label : label.name;
+                    if (/^bounty\s*#?\d+/i.test(name)) {
+                      existingSpecificBounty = name;
+                      break;
+                    }
+                  }
+
+                  if (existingSpecificBounty) bountyLabels.add(existingSpecificBounty);
                 } catch (error) {
                   core.info(`PR #${pr.number}: could not read issue #${number}: ${error?.message ?? String(error)}`);
                 }
@@ -74,21 +145,7 @@ jobs:
               }
 
               for (const name of bountyLabels) {
-                try {
-                  await github.rest.issues.getLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name,
-                  });
-                } catch (error) {
-                  core.info(`Creating missing label "${name}".`);
-                  await github.rest.issues.createLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name,
-                    color: "fcf22a",
-                  });
-                }
+                await ensureLabelExists(name);
               }
 
               core.info(`PR #${pr.number}: applying labels: ${[...bountyLabels].join(", ")}`);
@@ -100,4 +157,8 @@ jobs:
               });
             }
 
-            await labelPr(context.payload.pull_request);
+            if (context.eventName === "issues") {
+              await labelIssue(context.payload.issue);
+            } else {
+              await labelPr(context.payload.pull_request);
+            }
