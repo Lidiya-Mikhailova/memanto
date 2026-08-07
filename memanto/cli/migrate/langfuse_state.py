@@ -49,6 +49,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import time
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,6 +62,12 @@ from memanto.app.utils.validation import is_successful_write_result
 
 STATE_FILENAME = "state.json"
 STATE_VERSION = 1
+
+# Ledger locking. The critical section is a small file read plus a rename, so
+# waits are short; the timeout exists only so a flush thread can never hang.
+_LOCK_TIMEOUT_SECONDS = 5.0
+_LOCK_POLL_SECONDS = 0.02
+_LOCK_STALE_SECONDS = 30.0
 
 # Only these can be pushed through update_memory (constants.ALLOWED_UPDATE_FIELDS).
 _UPDATABLE_FIELDS = ("title", "content", "confidence", "tags", "type")
@@ -130,6 +140,52 @@ def load_state(path: Path, scope: str) -> dict[str, Any]:
     }
 
 
+@contextmanager
+def _exclusive(path: Path) -> Generator[None, None, None]:
+    """Hold a cross-process lock on the ledger for a read-modify-write.
+
+    Saving merges one scope into the whole file, so two writers that read
+    before either writes would lose one another's scope. That is not
+    hypothetical: a web app under several worker processes flushes
+    concurrently, and the CLI can sync while an app is running.
+
+    A lock file created with ``O_EXCL`` is the portable primitive here. A
+    holder that dies leaves the file behind, so a lock older than
+    ``_LOCK_STALE_SECONDS`` is broken rather than deadlocking forever. If the
+    lock cannot be taken in time we proceed anyway: a slightly racy ledger
+    costs a duplicate memory, while blocking an application's flush thread
+    indefinitely is worse.
+    """
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle: int | None = None
+    deadline = time.monotonic() + _LOCK_TIMEOUT_SECONDS
+
+    while handle is None and time.monotonic() < deadline:
+        try:
+            handle = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                if time.time() - lock_path.stat().st_mtime > _LOCK_STALE_SECONDS:
+                    lock_path.unlink(missing_ok=True)
+                    continue
+            except OSError:
+                pass
+            time.sleep(_LOCK_POLL_SECONDS)
+        except OSError:
+            break  # unwritable location — fall through unlocked
+
+    try:
+        yield
+    finally:
+        if handle is not None:
+            os.close(handle)
+            try:
+                lock_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def save_state(path: Path, state: dict[str, Any], scope: str | None = None) -> Path:
     """Persist one scope's ledger, leaving other scopes untouched."""
     scope = scope or state["scope"]
@@ -137,22 +193,25 @@ def save_state(path: Path, state: dict[str, Any], scope: str | None = None) -> P
     state["scope"] = scope
     state["last_synced_at"] = datetime.now(timezone.utc).isoformat()
 
-    scopes = _read_scopes(path)
-    scopes[scope] = {
-        "last_synced_at": state["last_synced_at"],
-        "signatures": state.get("signatures") or {},
-    }
-
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
+    with _exclusive(path):
+        # Re-read inside the lock: another writer may have added a scope since
+        # this caller loaded its own.
+        scopes = _read_scopes(path)
+        scopes[scope] = {
+            "last_synced_at": state["last_synced_at"],
+            "signatures": state.get("signatures") or {},
+        }
+        payload = json.dumps(
             {"version": STATE_VERSION, "scopes": scopes},
             indent=2,
             ensure_ascii=False,
             default=str,
-        ),
-        encoding="utf-8",
-    )
+        )
+        # Write-then-rename so a crash mid-write cannot truncate the ledger.
+        temp = path.with_suffix(path.suffix + f".tmp{os.getpid()}")
+        temp.write_text(payload, encoding="utf-8")
+        os.replace(temp, path)
     return path
 
 

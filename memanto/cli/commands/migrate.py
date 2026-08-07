@@ -1017,9 +1017,16 @@ def migrate_langfuse(
         _render_discovery(langfuse_discover.discover(export))
         return
 
-    target_agent = None if dry_run else _resolve_target_agent(agent)
+    # A dry run must reconcile against the ledger of the agent it would
+    # actually write to, or it reports every already-synced signature as new.
+    # It still must not *require* an agent, so resolution is best-effort here.
+    if dry_run:
+        target_agent = (agent or "").strip() or config_manager.get_active_session()[0]
+    else:
+        target_agent = _resolve_target_agent(agent)
+
     ledger_path = langfuse_state.state_path(base_dir)
-    scope = langfuse_state.scope_key(key, target_agent or "preview")
+    scope = langfuse_state.scope_key(key, target_agent or "unknown-agent")
     state = langfuse_state.load_state(ledger_path, scope)
 
     modes = project.capture
@@ -1100,6 +1107,9 @@ def migrate_langfuse(
     if dry_run:
         body_lines.append("")
         body_lines.append("[yellow]Dry run — no writes performed.[/yellow]")
+        body_lines.append(
+            f"[dim]Would target agent:[/dim] {target_agent or '(none active)'}"
+        )
     else:
         body_lines.append(
             f"[dim]Imported:[/dim] {summary.imported}  "

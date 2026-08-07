@@ -279,3 +279,67 @@ def test_last_synced_at_tolerates_junk():
     assert last_synced_at({"last_synced_at": None}) is None
     assert last_synced_at({"last_synced_at": "not-a-date"}) is None
     assert last_synced_at({"last_synced_at": "2026-08-01T12:00:00Z"}) is not None
+
+
+# --------------------------------------------------------------------------
+# Concurrent writers — a multi-worker app flushes from several processes
+# --------------------------------------------------------------------------
+
+
+def test_concurrent_writers_do_not_lose_each_others_scopes(tmp_path):
+    """Regression: save_state read the whole file then rewrote it, so two
+    writers racing would drop one another's scope."""
+    import threading
+
+    path = state_path(tmp_path)
+    scopes = [scope_key(f"proj-{i}", f"agent-{i}") for i in range(12)]
+    barrier = threading.Barrier(len(scopes))
+
+    def write(scope):
+        state = load_state(path, scope)
+        plan = reconcile([row(f"sig-{scope}")], state)
+        record_written(state, plan.new_rows, [ok(f"mem-{scope}")])
+        barrier.wait()  # maximise overlap
+        save_state(path, state, scope)
+
+    threads = [threading.Thread(target=write, args=(s,)) for s in scopes]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    written = json.loads(path.read_text(encoding="utf-8"))["scopes"]
+    assert set(written) == set(scopes), "a concurrent writer lost a scope"
+
+
+def test_the_ledger_is_never_left_truncated(tmp_path):
+    """Write-then-rename: readers only ever see a complete file."""
+    path = state_path(tmp_path)
+    state = empty_state()
+    record_written(state, reconcile([row("sig-a")], state).new_rows, [ok("mem-a")])
+    save_state(path, state)
+
+    assert json.loads(path.read_text(encoding="utf-8"))["scopes"]
+    assert not list(tmp_path.glob("*.tmp*")), "temp file left behind"
+    assert not list(tmp_path.glob("*.lock")), "lock file left behind"
+
+
+def test_a_stale_lock_does_not_deadlock(tmp_path):
+    """A crashed holder leaves a lock file; it must be broken, not waited on."""
+    import os
+    import time
+
+    from memanto.cli.migrate.langfuse_state import _LOCK_STALE_SECONDS
+
+    path = state_path(tmp_path)
+    lock = path.with_suffix(path.suffix + ".lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.touch()
+    old = time.time() - _LOCK_STALE_SECONDS - 5
+    os.utime(lock, (old, old))
+
+    started = time.monotonic()
+    save_state(path, empty_state())
+
+    assert time.monotonic() - started < 5
+    assert json.loads(path.read_text(encoding="utf-8"))["scopes"]
