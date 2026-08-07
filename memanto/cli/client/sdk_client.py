@@ -879,6 +879,7 @@ class SdkClient:
         min_similarity: float | None = None,
         created_after: datetime | None = None,
         created_before: datetime | None = None,
+        min_confidence: float | None = None,
     ) -> dict[str, Any]:
         """
         Search memories by semantic similarity.
@@ -892,6 +893,7 @@ class SdkClient:
             min_similarity: Minimum similarity threshold.
             created_after: Only memories created after this datetime.
             created_before: Only memories created before this datetime.
+            min_confidence: Minimum confidence threshold.
 
         Returns:
             Dict with ``agent_id``, ``query``, ``memories``, ``count``.
@@ -915,6 +917,7 @@ class SdkClient:
             agent_id=agent_id,
             type=type,
             tags=tags,
+            min_confidence=min_confidence,
             min_similarity_score=min_similarity,
             created_after=created_after.isoformat() if created_after else None,
             created_before=created_before.isoformat() if created_before else None,
