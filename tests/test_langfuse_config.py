@@ -250,3 +250,33 @@ def test_project_key_is_stable_and_distinguishes_projects():
     assert a == project_key(api_key="pk-lf-aaa:sk-2")  # secret doesn't matter
     assert a != b
     assert project_key() == "default"
+
+
+def test_unknown_capture_modes_are_dropped_on_load(tmp_path):
+    """Regression: a typo in a hand-edited config.json loaded cleanly and then
+    raised from CaptureConfig.__post_init__ mid-command, aborting with a
+    traceback. The rest of this module tolerates a damaged file; so does this."""
+    path = config_path(tmp_path)
+    path.write_text(
+        json.dumps(
+            {"version": 1, "projects": {"p": {"capture": ["errors", "error", "nope"]}}}
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_project(path, "p")
+
+    assert loaded.capture == frozenset({"errors"})
+    # And it must survive the conversion that used to blow up.
+    from memanto.cli.migrate.langfuse_rules import CaptureConfig
+
+    assert CaptureConfig.from_project(loaded).modes == frozenset({"errors"})
+
+
+def test_an_all_invalid_capture_list_falls_back_to_errors(tmp_path):
+    path = config_path(tmp_path)
+    path.write_text(
+        json.dumps({"version": 1, "projects": {"p": {"capture": ["bogus"]}}}),
+        encoding="utf-8",
+    )
+    assert load_project(path, "p").capture == frozenset({"errors"})

@@ -121,9 +121,10 @@ def span_to_observation(span: Any) -> dict[str, Any] | None:
     skips. Never raises: this runs inside the application's tracing path.
     """
     try:
-        context = getattr(span, "context", None) or getattr(
-            span, "get_span_context", lambda: None
-        )()
+        context = (
+            getattr(span, "context", None)
+            or getattr(span, "get_span_context", lambda: None)()
+        )
         if context is None:
             return None
 

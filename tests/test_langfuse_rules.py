@@ -121,9 +121,7 @@ def test_label_prefers_an_exception_class_when_present():
 
 
 def test_label_truncates_and_never_empties():
-    _, long_label = signature_for(
-        observation(statusMessage="x" * 500), "errors"
-    )
+    _, long_label = signature_for(observation(statusMessage="x" * 500), "errors")
     assert len(long_label) <= 60
 
     _, empty_label = signature_for(
@@ -232,9 +230,7 @@ def test_slow_and_costly_thresholds():
 def test_errors_outrank_slow_for_the_same_observation():
     """An errored slow call is an error, not a latency anomaly."""
     config = CaptureConfig(modes=frozenset({"errors", "slow"}), latency_ms=1_000)
-    both = observation(
-        startTime="2026-08-01T12:00:00Z", endTime="2026-08-01T12:00:45Z"
-    )
+    both = observation(startTime="2026-08-01T12:00:00Z", endTime="2026-08-01T12:00:45Z")
     assert classify(both, config) == "errors"
 
 
@@ -458,7 +454,9 @@ def test_threshold_modes_get_distinct_self_describing_titles():
         "https://x",
     )
     costly = to_memory_payload(
-        group_observations([costly_obs], CC(modes=frozenset({"costly"}), cost_usd=1))[0],
+        group_observations([costly_obs], CC(modes=frozenset({"costly"}), cost_usd=1))[
+            0
+        ],
         "https://x",
     )
 
@@ -470,7 +468,9 @@ def test_threshold_modes_get_distinct_self_describing_titles():
 
 
 def test_error_titles_still_lead_with_the_fault():
-    payload = to_memory_payload(group_observations([observation()], ALL_MODES)[0], "https://x")
+    payload = to_memory_payload(
+        group_observations([observation()], ALL_MODES)[0], "https://x"
+    )
     assert payload["title"] == "RateLimitError in summarize_node"
 
 
@@ -534,9 +534,7 @@ def test_volatile_fragments_that_would_fork_signatures_are_normalized():
         "Failed for user alice@corp.com",
         "Failed for user bob@other.org",
     ]
-    sigs = {
-        signature_for(observation(statusMessage=m), "errors")[0] for m in volatile
-    }
+    sigs = {signature_for(observation(statusMessage=m), "errors")[0] for m in volatile}
     assert len(sigs) == 1
 
     ips = {

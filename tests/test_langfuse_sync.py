@@ -337,7 +337,9 @@ def test_ui_capture_checkboxes_apply_to_file_replays(ui, tmp_path):
     path.write_text(json.dumps(_slow_export()), encoding="utf-8")
     req = {"provider": "langfuse", "file": str(path), "agent_id": "test-agent"}
 
-    errors_only = ui.post("/api/ui/migrate/dry-run", json={**req, "capture": ["errors"]})
+    errors_only = ui.post(
+        "/api/ui/migrate/dry-run", json={**req, "capture": ["errors"]}
+    )
     with_slow = ui.post(
         "/api/ui/migrate/dry-run",
         json={**req, "capture": ["slow"], "latency_ms": 30_000},

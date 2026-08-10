@@ -164,16 +164,25 @@ def _exclusive(path: Path) -> Generator[None, None, None]:
     while handle is None and time.monotonic() < deadline:
         try:
             handle = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
         except FileExistsError:
             try:
                 if time.time() - lock_path.stat().st_mtime > _LOCK_STALE_SECONDS:
                     lock_path.unlink(missing_ok=True)
                     continue
             except OSError:
+                # The holder can remove or replace the lock between our
+                # existence check and the stat/unlink. Fall through to the
+                # sleep below and try again.
                 pass
-            time.sleep(_LOCK_POLL_SECONDS)
         except OSError:
-            break  # unwritable location — fall through unlocked
+            # Every other OSError here is transient under contention — Windows
+            # raises PermissionError when the lock file is mid-delete, for
+            # instance. Treating those as fatal and proceeding unlocked is
+            # what made concurrent writers lose each other's scopes; retry
+            # until the deadline instead.
+            pass
+        time.sleep(_LOCK_POLL_SECONDS)
 
     try:
         yield
@@ -183,24 +192,56 @@ def _exclusive(path: Path) -> Generator[None, None, None]:
             try:
                 lock_path.unlink(missing_ok=True)
             except OSError:
+                # Best-effort cleanup. A lock file left behind is recovered by
+                # the stale-lock check on the next acquisition.
                 pass
 
 
-def save_state(path: Path, state: dict[str, Any], scope: str | None = None) -> Path:
-    """Persist one scope's ledger, leaving other scopes untouched."""
+def save_state(
+    path: Path,
+    state: dict[str, Any],
+    scope: str | None = None,
+    *,
+    advance_cursor: bool = True,
+) -> Path:
+    """Persist one scope's ledger, leaving other scopes untouched.
+
+    Set *advance_cursor* to ``False`` when any write failed. The cursor is what
+    the next run uses as its ``since`` window, so stamping it after a failure
+    would move the window past observations that were never stored — Langfuse
+    would not return them again and the memories would be lost silently.
+    """
     scope = scope or state["scope"]
     state["version"] = STATE_VERSION
     state["scope"] = scope
-    state["last_synced_at"] = datetime.now(timezone.utc).isoformat()
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with _exclusive(path):
-        # Re-read inside the lock: another writer may have added a scope since
-        # this caller loaded its own.
+        # Re-read inside the lock: another writer may have touched the file
+        # since this caller loaded its own copy.
         scopes = _read_scopes(path)
+        stored = scopes.get(scope)
+        previous: dict[str, Any] = stored if isinstance(stored, dict) else {}
+
+        if advance_cursor:
+            state["last_synced_at"] = datetime.now(timezone.utc).isoformat()
+        else:
+            state["last_synced_at"] = previous.get("last_synced_at")
+
+        # Merge rather than replace. The lock alone only protects *other*
+        # scopes: two writers on the same scope would each save their own
+        # in-memory view, and the slower one would erase signatures the other
+        # had just recorded — producing exactly the duplicate memory this
+        # ledger exists to prevent. Every entry is an already-written memory,
+        # so keeping both sides is always the safe direction; this caller's
+        # own entries win where the keys collide.
+        merged = dict(previous.get("signatures") or {})
+        merged.update(state.get("signatures") or {})
+        state["signatures"] = merged
+
         scopes[scope] = {
             "last_synced_at": state["last_synced_at"],
-            "signatures": state.get("signatures") or {},
+            "signatures": merged,
         }
         payload = json.dumps(
             {"version": STATE_VERSION, "scopes": scopes},

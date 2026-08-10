@@ -48,6 +48,11 @@ CONFIG_FILENAME = "config.json"
 CONFIG_VERSION = 1
 DEFAULT_PROJECT_KEY = "default"
 
+# Defined here rather than in `langfuse_rules` because that module imports this
+# one; keeping the constant at the lower level lets config validate what it
+# loads without a circular import. `langfuse_rules` re-exports it.
+CAPTURE_MODES = ("errors", "low_score", "slow", "costly", "success")
+
 # `<=` and `>=` must be tried before `<` and `>`.
 _RULE_RE = re.compile(
     r"^\s*(?P<name>[^<>=!\s]+)\s*(?P<op><=|>=|!=|==|=|<|>|\bin\b)\s*(?P<value>.+?)\s*$",
@@ -221,9 +226,16 @@ class ProjectConfig:
                     continue
             return parsed
 
-        capture = raw.get("capture") or ["errors"]
+        # Drop unknown modes rather than letting them through. A typo in a
+        # hand-edited config.json ("error" for "errors") would otherwise load
+        # cleanly and then raise from CaptureConfig.__post_init__ mid-command.
+        # This matches how the rest of this module treats a damaged file:
+        # rules that don't parse are skipped, and a corrupt file loads empty.
+        capture = {str(m).replace("-", "_") for m in (raw.get("capture") or ["errors"])}
+        valid = capture & set(CAPTURE_MODES)
+
         return cls(
-            capture=frozenset(str(m).replace("-", "_") for m in capture),
+            capture=frozenset(valid or {"errors"}),
             score_fail_rules=rules("score_fail_rules"),
             score_pass_rules=rules("score_pass_rules"),
             latency_ms=_opt_float(raw.get("latency_ms")),
@@ -295,9 +307,7 @@ def _opt_float(value: Any) -> float | None:
         return None
 
 
-def project_key(
-    *, project_id: str | None = None, api_key: str | None = None
-) -> str:
+def project_key(*, project_id: str | None = None, api_key: str | None = None) -> str:
     """A stable identity for the Langfuse project being synced.
 
     Prefers the ``projectId`` carried on observations. Before any data has

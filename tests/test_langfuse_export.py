@@ -194,10 +194,18 @@ def test_score_modes_hydrate_only_the_traces_a_rule_matches(tmp_path, monkeypatc
             # scores page: one failing, one passing (live `subject` linkage)
             {
                 "data": [
-                    {"id": "s1", "subject": {"kind": "trace", "id": "trace-7"},
-                     "name": "correctness", "value": 0.1},
-                    {"id": "s2", "subject": {"kind": "trace", "id": "trace-8"},
-                     "name": "correctness", "value": 0.95},
+                    {
+                        "id": "s1",
+                        "subject": {"kind": "trace", "id": "trace-7"},
+                        "name": "correctness",
+                        "value": 0.1,
+                    },
+                    {
+                        "id": "s2",
+                        "subject": {"kind": "trace", "id": "trace-8"},
+                        "name": "correctness",
+                        "value": 0.95,
+                    },
                 ],
                 "meta": {"nextCursor": None},
             },

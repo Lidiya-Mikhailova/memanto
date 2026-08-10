@@ -146,9 +146,7 @@ def test_absent_cost_data_is_called_out():
 
 
 def test_present_cost_data_is_not_flagged():
-    report = discover(
-        export(observations=[obs(costDetails={"total": 0.02})])
-    )
+    report = discover(export(observations=[obs(costDetails={"total": 0.02})]))
 
     assert report["has_cost_data"] is True
     assert not any("cost data" in note for note in report["notes"])
@@ -184,3 +182,26 @@ def test_discover_on_an_empty_export():
     assert report["scores"] == []
     assert report["operations"] == []
     assert len(report["notes"]) >= 1
+
+
+def test_a_numeric_score_with_no_observed_range_is_not_given_fake_bounds():
+    """Regression: a score Langfuse labels NUMERIC whose values are all strings
+    has no observed min/max, and the suggestion fell back to 0..1 — printing
+    '(observed 0..1)' for a range nobody saw, with a threshold matching nothing."""
+    row = describe_scores(
+        [
+            {"name": "grade", "value": "A", "dataType": "NUMERIC"},
+            {"name": "grade", "value": "B", "dataType": "NUMERIC"},
+        ]
+    )[0]
+
+    assert "min" not in row
+    assert "observed 0..1" not in row["suggestion"]
+    assert "in" in row["suggestion"]  # falls back to the membership form
+
+
+def test_a_real_numeric_range_still_reports_observed_bounds():
+    row = describe_scores(
+        [{"name": "rating", "value": v, "dataType": "NUMERIC"} for v in (1, 5)]
+    )[0]
+    assert "observed 1.0..5.0" in row["suggestion"]

@@ -42,7 +42,9 @@ def errors_only(capture_dir):
     )
 
     save_project(
-        config_path(capture_dir), "default", ProjectConfig(capture=frozenset({"errors"}))
+        config_path(capture_dir),
+        "default",
+        ProjectConfig(capture=frozenset({"errors"})),
     )
     return capture_dir
 

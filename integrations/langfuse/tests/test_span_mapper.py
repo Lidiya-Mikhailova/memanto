@@ -120,7 +120,9 @@ def test_mapped_spans_flow_through_the_shared_rules():
         span_to_observation(make_span(span_id=i, status_message="Boom happened"))
         for i in range(1, 13)
     ]
-    groups = group_observations(observations, CaptureConfig(modes=frozenset({"errors"})))
+    groups = group_observations(
+        observations, CaptureConfig(modes=frozenset({"errors"}))
+    )
 
     assert len(groups) == 1
     assert groups[0].count == 12

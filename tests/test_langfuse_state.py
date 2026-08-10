@@ -343,3 +343,76 @@ def test_a_stale_lock_does_not_deadlock(tmp_path):
 
     assert time.monotonic() - started < 5
     assert json.loads(path.read_text(encoding="utf-8"))["scopes"]
+
+
+# --------------------------------------------------------------------------
+# Review findings: same-scope merge and the failure cursor
+# --------------------------------------------------------------------------
+
+
+def test_two_writers_on_one_scope_do_not_erase_each_other(tmp_path):
+    """The lock alone only protects *other* scopes.
+
+    Regression: save_state replaced the scope wholesale with the caller's
+    in-memory view, so a writer that loaded before another's write landed
+    would erase it — producing the duplicate this ledger exists to prevent.
+    """
+    path = state_path(tmp_path)
+
+    # Both load the same (empty) scope before either saves.
+    a = load_state(path, SCOPE)
+    b = load_state(path, SCOPE)
+
+    record_written(a, reconcile([row("sig-a")], a).new_rows, [ok("mem-a")])
+    save_state(path, a, SCOPE)
+
+    record_written(b, reconcile([row("sig-b")], b).new_rows, [ok("mem-b")])
+    save_state(path, b, SCOPE)
+
+    merged = load_state(path, SCOPE)["signatures"]
+    assert set(merged) == {"sig-a", "sig-b"}, "a writer erased the other's signature"
+
+
+def test_the_later_writer_wins_where_keys_collide(tmp_path):
+    """Two writers that each recorded the same signature independently.
+
+    Merging must not resurrect the earlier entry over the later one.
+    """
+    path = state_path(tmp_path)
+
+    a = load_state(path, SCOPE)
+    b = load_state(path, SCOPE)  # both start empty, so both see it as new
+
+    record_written(a, reconcile([row("sig-a")], a).new_rows, [ok("first")])
+    record_written(b, reconcile([row("sig-a")], b).new_rows, [ok("second")])
+
+    save_state(path, a, SCOPE)
+    save_state(path, b, SCOPE)
+
+    assert load_state(path, SCOPE)["signatures"]["sig-a"]["memory_id"] == "second"
+
+
+def test_the_cursor_does_not_advance_past_a_failure(tmp_path):
+    """Regression: the cursor was stamped unconditionally, so the next run's
+    window started after observations that were never stored — and Langfuse
+    would not return them again."""
+    path = state_path(tmp_path)
+
+    state = load_state(path, SCOPE)
+    record_written(state, reconcile([row("sig-a")], state).new_rows, [ok("mem-a")])
+    save_state(path, state, SCOPE)
+    good_cursor = last_synced_at(load_state(path, SCOPE))
+    assert good_cursor is not None
+
+    # A later run where a write failed must leave the cursor where it was.
+    failed = load_state(path, SCOPE)
+    save_state(path, failed, SCOPE, advance_cursor=False)
+
+    assert last_synced_at(load_state(path, SCOPE)) == good_cursor
+
+
+def test_a_first_run_that_fails_leaves_no_cursor(tmp_path):
+    path = state_path(tmp_path)
+    save_state(path, load_state(path, SCOPE), SCOPE, advance_cursor=False)
+
+    assert last_synced_at(load_state(path, SCOPE)) is None

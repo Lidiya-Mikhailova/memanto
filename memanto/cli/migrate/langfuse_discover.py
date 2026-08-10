@@ -74,9 +74,7 @@ def describe_scores(scores: list[dict[str, Any]]) -> list[dict[str, Any]]:
         kind = declared.get(name) or _score_kind(values)
         row: dict[str, Any] = {"name": name, "data_type": kind, "count": len(values)}
 
-        numeric = [
-            float(v) for v in values if isinstance(v, (int, float))
-        ]
+        numeric = [float(v) for v in values if isinstance(v, (int, float))]
         if kind in ("NUMERIC", "BOOLEAN") and numeric:
             row["min"] = round(min(numeric), 4)
             row["max"] = round(max(numeric), 4)
@@ -93,13 +91,21 @@ def describe_scores(scores: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _suggest_rule(row: dict[str, Any]) -> str:
-    """A copy-pasteable starting rule — direction is still the user's call."""
+    """A copy-pasteable starting rule — direction is still the user's call.
+
+    Branches on the data actually present, not on the declared type. A score
+    Langfuse labels NUMERIC whose exported values are all strings has no
+    observed range, and falling back to 0..1 would print "(observed 0..1)" for
+    a range nobody ever saw — and suggest a threshold that captures nothing.
+    """
     name = row["name"]
     kind = row["data_type"]
-    if kind == "BOOLEAN":
+    has_range = "min" in row and "max" in row
+
+    if kind == "BOOLEAN" and has_range:
         return f"--score-fail '{name}=false'   (or =true if this score flags a problem)"
-    if kind == "NUMERIC":
-        low, high = row.get("min", 0), row.get("max", 1)
+    if kind == "NUMERIC" and has_range:
+        low, high = row["min"], row["max"]
         midpoint = round(low + (high - low) * 0.6, 3)
         return (
             f"--score-fail '{name}<{midpoint}'   "

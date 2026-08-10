@@ -123,9 +123,7 @@ def langfuse_warnings(
 
     for mode, reason in config.unconfigured_modes().items():
         warnings.append(f"'{mode.replace('_', '-')}' captured nothing: {reason}")
-    if "costly" in config.modes and not has_cost_data(
-        export.get("observations") or []
-    ):
+    if "costly" in config.modes and not has_cost_data(export.get("observations") or []):
         warnings.append(
             "'costly' captured nothing: no observation in this window carries "
             "cost data. Self-hosted Langfuse needs model pricing configured."

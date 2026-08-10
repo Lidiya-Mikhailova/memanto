@@ -104,6 +104,13 @@ class MemantoLangfuseHandler(SpanProcessor):
 
         self._buffer: list[dict[str, Any]] = []
         self._lock = threading.Lock()
+        # Separate from `_lock`, which only guards the buffer. A flush is a
+        # load-modify-save cycle over the shared ledger, and two of them
+        # overlapping would each save their own view of the scope — the slower
+        # writer erasing the faster one's newly recorded signatures. The worker
+        # thread and an application calling flush()/shutdown() really can
+        # overlap, so the cycle is serialized.
+        self._flush_lock = threading.Lock()
         self._wake = threading.Event()
         self._stopped = threading.Event()
         self._thread: threading.Thread | None = None
@@ -158,12 +165,20 @@ class MemantoLangfuseHandler(SpanProcessor):
         )
 
         # Derive the project identity the same way the CLI does, from the
-        # Langfuse public key the app already has configured. Without this the
+        # Langfuse credential the app already has configured. Without this the
         # handler would file its writes under "default" while `memanto migrate
         # langfuse` used the key-derived scope — and the sync would re-write
         # every memory the app had already stored.
+        #
+        # Precedence mirrors ConfigManager.get_langfuse_api_key: the combined
+        # LANGFUSE_API_KEY first, then the vendor-native public key. Reading
+        # only the latter would miss users who set just the combined form.
+        # `project_key` splits on ":", so passing either shape is safe.
         key = project_key or derive_project_key(
-            api_key=os.environ.get("LANGFUSE_PUBLIC_KEY")
+            api_key=(
+                os.environ.get("LANGFUSE_API_KEY")
+                or os.environ.get("LANGFUSE_PUBLIC_KEY")
+            )
         )
         base_dir = ConfigManager().get_migrate_dir("langfuse")
         stored = load_project(config_path(base_dir), key)
@@ -370,6 +385,10 @@ class MemantoLangfuseHandler(SpanProcessor):
         ledger, batching, and payload shaping are the same code the CLI runs.
         A batch that fails to write is retained and retried, not discarded.
         """
+        with self._flush_lock:
+            return self._flush_locked()
+
+    def _flush_locked(self) -> int:
         with self._lock:
             if not self._buffer:
                 return 0
@@ -406,7 +425,9 @@ class MemantoLangfuseHandler(SpanProcessor):
                 dry_run=False,
                 config=self._config,
             )
-            save_state(ledger, state, scope)
+            # A failed write leaves the cursor where it was, so the next sync
+            # still covers what was not stored.
+            save_state(ledger, state, scope, advance_cursor=summary.failed == 0)
 
             written = int(summary.imported) + int(summary.updated)
             self.written += written

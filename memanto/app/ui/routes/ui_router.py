@@ -1009,7 +1009,9 @@ def _langfuse_project_key(options: dict) -> str:
     )
 
 
-def _migrate_langfuse_ledger(options: dict, agent_id: str = "preview") -> tuple[Path, str, dict]:
+def _migrate_langfuse_ledger(
+    options: dict, agent_id: str = "preview"
+) -> tuple[Path, str, dict]:
     """The Langfuse sync ledger, its path, and this request's scope.
 
     Langfuse is a repeatable sync rather than a one-shot import, so the tile
@@ -1059,9 +1061,7 @@ def _migrate_langfuse_config(options: dict) -> Any:
         try:
             return float(options[key])
         except (TypeError, ValueError):
-            raise HTTPException(
-                status_code=400, detail=f"'{key}' must be a number."
-            )
+            raise HTTPException(status_code=400, detail=f"'{key}' must be a number.")
 
     try:
         merged = ProjectConfig(
@@ -1073,9 +1073,7 @@ def _migrate_langfuse_config(options: dict) -> Any:
             score_fail_rules=rules("score_fail_rules", stored.score_fail_rules),
             score_pass_rules=rules("score_pass_rules", stored.score_pass_rules),
             latency_ms=number("latency_ms", stored.latency_ms),
-            latency_percentile=number(
-                "latency_percentile", stored.latency_percentile
-            ),
+            latency_percentile=number("latency_percentile", stored.latency_percentile),
             cost_usd=number("cost_usd", stored.cost_usd),
             cost_percentile=number("cost_percentile", stored.cost_percentile),
             group_by=options.get("group_by") or stored.group_by,
@@ -1421,7 +1419,9 @@ async def migrate_import(body: dict, _: None = Depends(_require_local)):
                 config=langfuse_config,
                 on_progress=None,
             )
-            save_state(ledger_path, state, scope)
+            # Hold the cursor back on failure so the next sync's window still
+            # covers the observations that were not stored.
+            save_state(ledger_path, state, scope, advance_cursor=summary.failed == 0)
         else:
             summary, _rows = run_migration(
                 provider=provider,

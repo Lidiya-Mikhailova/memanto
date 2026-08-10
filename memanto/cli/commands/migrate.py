@@ -994,7 +994,10 @@ def migrate_langfuse(
     # ---- Discovery: look, report, write nothing. -------------------------
     if discover:
         if file is not None:
-            export = load_export(file)
+            try:
+                export = load_export(file)
+            except Exception as exc:
+                _error(f"Failed to load Langfuse export: {exc}")
         else:
             progress(f"Sampling {resolved_host}...")
             try:
@@ -1055,7 +1058,9 @@ def migrate_langfuse(
             _error(f"Failed to load Langfuse export: {exc}")
     else:
         window = (
-            f"since {since.isoformat()}" if since else f"last {DEFAULT_WINDOW_DAYS} days"
+            f"since {since.isoformat()}"
+            if since
+            else f"last {DEFAULT_WINDOW_DAYS} days"
         )
         progress(f"Pulling from {resolved_host} ({window})")
         try:
@@ -1088,8 +1093,12 @@ def migrate_langfuse(
     preview_path = write_preview(rows, run_dir / "mapped_preview.json")
 
     if not dry_run:
-        # Saved even when nothing changed, so the cursor still advances.
-        langfuse_state.save_state(ledger_path, state, scope)
+        # Saved even when nothing changed, so the cursor still advances — but
+        # not past a failure, or the next run's window would skip observations
+        # that were never stored.
+        langfuse_state.save_state(
+            ledger_path, state, scope, advance_cursor=summary.failed == 0
+        )
 
     type_lines = (
         ", ".join(f"{k}: {v}" for k, v in sorted(summary.type_counts.items())) or "—"

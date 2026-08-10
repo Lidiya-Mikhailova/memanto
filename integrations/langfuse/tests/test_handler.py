@@ -142,7 +142,9 @@ def test_a_broken_client_does_not_raise(errors_only):
 # --------------------------------------------------------------------------
 
 
-def test_score_modes_warn_that_they_cannot_work_live(capture_dir, memanto_client, caplog):
+def test_score_modes_warn_that_they_cannot_work_live(
+    capture_dir, memanto_client, caplog
+):
     from memanto.cli.migrate.langfuse_config import (
         ProjectConfig,
         config_path,
@@ -280,9 +282,7 @@ def test_a_bad_in_code_rule_fails_loudly_at_startup(capture_dir, memanto_client)
         MemantoLangfuseHandler(agent_id="a", client=memanto_client, capture=["nope"])
 
 
-def test_the_agent_is_created_and_activated_on_first_write(
-    errors_only, memanto_client
-):
+def test_the_agent_is_created_and_activated_on_first_write(errors_only, memanto_client):
     """A dev with only an API key should never touch the CLI."""
     from memanto.app.utils.errors import AgentNotFoundError
 
@@ -419,3 +419,65 @@ def test_a_partial_failure_is_retried_not_dropped(errors_only, memanto_client):
     handler.flush()
 
     assert handler.stats()["pending"] == 1
+
+
+def test_project_scope_honours_the_combined_langfuse_api_key(
+    capture_dir, memanto_client, monkeypatch
+):
+    """Regression: the handler read only LANGFUSE_PUBLIC_KEY while the CLI
+    prefers the combined LANGFUSE_API_KEY, so a user who set only the combined
+    form got 'default' here and the key-derived scope there — reintroducing
+    the duplicate-write bug the scope fix was meant to close."""
+    from memanto.cli.migrate.langfuse_config import project_key
+
+    monkeypatch.setenv("LANGFUSE_API_KEY", "pk-lf-abc123:sk-lf-secret")
+    handler = MemantoLangfuseHandler(agent_id="a", client=memanto_client)
+
+    assert handler._project_key == project_key(api_key="pk-lf-abc123")
+    assert handler._project_key != "default"
+
+
+def test_the_combined_key_wins_over_the_public_key(
+    capture_dir, memanto_client, monkeypatch
+):
+    from memanto.cli.migrate.langfuse_config import project_key
+
+    monkeypatch.setenv("LANGFUSE_API_KEY", "pk-lf-combined:sk-lf-x")
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-other")
+    handler = MemantoLangfuseHandler(agent_id="a", client=memanto_client)
+
+    assert handler._project_key == project_key(api_key="pk-lf-combined")
+
+
+def test_concurrent_flushes_do_not_lose_signatures(errors_only, memanto_client):
+    """Regression: the worker thread and an app calling flush() could overlap,
+    each saving its own view of the ledger scope — the slower one erasing the
+    other's newly recorded signatures."""
+    import threading
+
+    handler = build(errors_only, memanto_client)
+    # Distinct *operations*: varying only a number in the message would be
+    # normalized away and collapse into a single signature.
+    for i in range(40):
+        handler.on_end(make_span(name=f"op-{i}", span_id=i))
+
+    barrier = threading.Barrier(4)
+
+    def worker():
+        barrier.wait()
+        handler.flush()
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    from memanto.cli.config.manager import ConfigManager
+    from memanto.cli.migrate.langfuse_state import load_state, scope_key, state_path
+
+    ledger = state_path(ConfigManager().get_migrate_dir("langfuse"))
+    stored = load_state(ledger, scope_key(handler._project_key, "test-agent"))
+
+    assert len(stored["signatures"]) == 40, "a concurrent flush lost signatures"
+    assert handler.stats()["pending"] == 0

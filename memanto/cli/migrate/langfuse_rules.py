@@ -41,6 +41,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from memanto.cli.migrate.langfuse_config import (
+    CAPTURE_MODES,
     ProjectConfig,
     ScoreRule,
     unconfigured_modes,
@@ -56,8 +57,6 @@ from memanto.cli.migrate.mappers import (
     _parse_dt,
     _title_from,
 )
-
-CAPTURE_MODES = ("errors", "low_score", "slow", "costly", "success")
 
 # Most actionable first: an observation that both errored and ran slow is an
 # error, not a latency anomaly.
@@ -622,9 +621,7 @@ def group_observations(
     return sorted(groups.values(), key=lambda g: g.count, reverse=True)
 
 
-def cardinality_warning(
-    observations_matched: int, signature_count: int
-) -> str | None:
+def cardinality_warning(observations_matched: int, signature_count: int) -> str | None:
     """Warn when grouping barely collapsed anything.
 
     Not fatal: a project really can have many distinct one-off faults. But a
@@ -715,8 +712,7 @@ def _headline(group: SignatureGroup) -> str:
             f"observation{plural} (peak {group.max_latency_ms:.0f} ms)."
         )
     return (
-        f"'{group.name}' was scored as a success in {group.count} "
-        f"observation{plural}."
+        f"'{group.name}' was scored as a success in {group.count} observation{plural}."
     )
 
 
@@ -798,9 +794,7 @@ def to_memory_payload(group: SignatureGroup, host: str) -> dict[str, Any]:
     }
 
 
-def build_rows(
-    export: dict[str, Any], config: CaptureConfig
-) -> list[dict[str, Any]]:
+def build_rows(export: dict[str, Any], config: CaptureConfig) -> list[dict[str, Any]]:
     """Map a Langfuse export dict onto grouped Memanto memory payloads."""
     host = str(export.get("api_base") or "https://cloud.langfuse.com")
     groups = group_observations(
