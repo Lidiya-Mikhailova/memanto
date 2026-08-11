@@ -13,7 +13,6 @@ backends expose it.
 from typing import Any
 
 from fastapi import Header
-from fastapi.params import Param
 from moorcheh_sdk import AsyncMoorchehClient, MoorchehClient
 
 from memanto.app.clients.backend import Backend, parse_backend
