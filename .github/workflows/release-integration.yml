@@ -48,6 +48,14 @@ jobs:
           exit 1
         fi
 
+        # The tag version and the packaged version are read independently, so
+        # a mismatch would publish something other than what the tag names.
+        DECLARED=$(grep -m1 '^version = ' "integrations/$INTEGRATION/pyproject.toml" | sed 's/.*"\(.*\)".*/\1/')
+        if [ "$DECLARED" != "$VERSION" ]; then
+          echo "::error::Tag says v$VERSION but integrations/$INTEGRATION/pyproject.toml declares $DECLARED"
+          exit 1
+        fi
+
         echo "integration=$INTEGRATION" >> $GITHUB_OUTPUT
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "tag=$TAG" >> $GITHUB_OUTPUT
