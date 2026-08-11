@@ -99,6 +99,7 @@ dev = [
     "twine>=6.1.0,<7",
     "pre-commit>=4.4.0,<5",
     "ruff>=0.14.6,<0.15",
+    "types-requests>=2.33.0.20260712",
 ]
 
 # Optional: Configure MyPy
