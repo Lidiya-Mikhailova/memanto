@@ -6,8 +6,7 @@ contributors" setting enabled. This blocks anyone who hasn't committed to `main`
 
 
 To unblock real contributors without re-opening the floodgates, sign in via
-GitHub on [https://memanto.ai/contributor-onboard](https://memanto.ai/contributor-onboard) and a CI job will add your username here on your behalf — making you a "prior
-contributor" and granting you access to participate.
+GitHub on [https://memanto.ai/contributor-onboard](https://memanto.ai/contributor-onboard) and a CI job will add your username here on your behalf, making you a "prior contributor" and granting you access to participate.
 
 
 • @het0814
