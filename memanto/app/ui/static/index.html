@@ -7,7 +7,7 @@
     <title>Memanto Dashboard — Memory that AI Agents Love!</title>
     <meta name="description" content="MEMANTO Web UI Dashboard for managing agentic AI memory">
     <link rel="icon" type="image/x-icon" href="/ui/static/favicon.ico">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
     <style>
         :root {
@@ -43,6 +43,7 @@
             --radius-xs: 6px;
             --transition: 0.2s ease;
             --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+            --font-sans: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         }
 
         *,
@@ -56,7 +57,7 @@
         html,
         body {
             height: 100%;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: var(--font-sans);
             background: var(--bg-primary);
             color: var(--text-primary);
             -webkit-font-smoothing: antialiased;
@@ -752,13 +753,20 @@
 
         /* ── Loading ── */
         .spinner {
-            width: 18px;
-            height: 18px;
-            border: 2px solid var(--border);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
             display: inline-block;
+            width: 22px;
+            height: 22px;
+            background-image: url('/ui/static/ant.svg');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            vertical-align: middle;
+            flex-shrink: 0;
+        }
+
+        .loading-overlay .spinner {
+            width: 48px;
+            height: 48px;
         }
 
         @keyframes spin {
@@ -3271,7 +3279,7 @@
             }
             const btn = document.getElementById('btnExtractPreview');
             const originalText = btn.innerHTML;
-            btn.innerHTML = '<span class="spinner" style="display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin 0.75s linear infinite"></span> Extracting...';
+            btn.innerHTML = '<span class="spinner"></span> Extracting...';
             btn.disabled = true;
             try {
                 const res = await api('POST', `/api/v2/agents/${S.agentId}/remember/extract`, {
