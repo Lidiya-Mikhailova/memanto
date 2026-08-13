@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "memanto-mcp"
-version = "0.1.2"
-description = "Model Context Protocol (MCP) server for Memanto - persistent semantic memory for any MCP-compatible agent"
+name = "langfuse-memanto"
+version = "0.1.0"
+description = "Turn Langfuse observability signal into Memanto memories, live from your app"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10,<4"
@@ -15,17 +15,15 @@ authors = [
 keywords = [
     "memanto",
     "moorcheh",
-    "mcp",
-    "model-context-protocol",
+    "langfuse",
+    "observability",
+    "opentelemetry",
     "agent memory",
-    "semantic memory",
-    "claude",
-    "cursor",
-    "anthropic",
+    "llm monitoring",
+    "tracing",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -37,15 +35,16 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    # Upper bound is required, not cautionary: mcp 2.0 removed
-    # `mcp.server.fastmcp` (FastMCP became `mcp.server.mcpserver.MCPServer`),
-    # so an unpinned install resolves to a release this server cannot import.
-    "mcp[cli]>=1.2.0,<2",
-    # Sources are open labels again as of 0.2.13, which is also where
-    # core.MemorySource / is_valid_source (imported by tools.py) land. 0.2.11
-    # and 0.2.12 reject any source outside user/agent/tool/system, so this
-    # server cannot attribute writes to the calling client on those.
-    "memanto>=0.2.13",
+    # The handler is an OpenTelemetry SpanProcessor, so it needs the OTel SDK
+    # directly. `langfuse` itself is NOT a dependency: it already brings OTel,
+    # and depending on it would pin this package to the SDK's release cadence
+    # for an API it never calls.
+    "opentelemetry-sdk>=1.20.0",
+    # Grouping, signatures, and payload shaping are shared with
+    # `memanto migrate langfuse` so a memory reads the same either way.
+    # 0.2.14 is the first release carrying memanto.cli.migrate.langfuse_*;
+    # anything older resolves but fails at handler construction.
+    "memanto>=0.2.14",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
     "python-dotenv>=1.0.0",
@@ -58,10 +57,8 @@ dev = [
     "pytest-mock>=3.12.0,<4",
     "ruff>=0.14.6,<0.15",
     "mypy>=1.10.0,<2",
+    "langfuse>=3",
 ]
-
-[project.scripts]
-memanto-mcp = "memanto_mcp.__main__:main"
 
 [project.urls]
 Homepage = "https://www.memanto.ai"
@@ -70,7 +67,7 @@ Repository = "https://github.com/moorcheh-ai/memanto"
 "Bug Tracker" = "https://github.com/moorcheh-ai/memanto/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["memanto_mcp"]
+packages = ["langfuse_memanto"]
 
 [tool.ruff]
 target-version = "py310"
