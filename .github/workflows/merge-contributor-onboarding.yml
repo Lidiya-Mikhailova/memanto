@@ -15,8 +15,17 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
+      - name: Generate Approver Token
+        id: generate_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APPROVER_APP_ID }}
+          private-key: ${{ secrets.APPROVER_APP_PRIVATE_KEY }}
+
       - name: Validate and merge onboarding PR
         uses: actions/github-script@v7
+        env:
+          APPROVER_TOKEN: ${{ steps.generate_token.outputs.token }}
         with:
           script: |
             const pr = context.payload.pull_request;
@@ -89,6 +98,25 @@ jobs:
               return fail("file contents do not match one appended contributor entry.");
             }
 
+            // Approve the PR using the Approver Bot identity
+            const approveRes = await fetch(`https://api.github.com/repos/${context.repo.owner}/${context.repo.repo}/pulls/${pr.number}/reviews`, {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${process.env.APPROVER_TOKEN}`,
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "actions/github-script"
+              },
+              body: JSON.stringify({ event: "APPROVE" })
+            });
+
+            if (!approveRes.ok) {
+              const errText = await approveRes.text();
+              return fail(`Failed to approve PR via token: ${errText}`);
+            }
+            core.info(`Approved onboarding PR #${pr.number} via Approver Token.`);
+
+            // Merge the PR
             await github.rest.pulls.merge({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -97,3 +125,15 @@ jobs:
               merge_method: "rebase",
             });
             core.info(`Merged onboarding PR #${pr.number} for @${contributor}.`);
+
+            // Delete the branch after successful merge
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${pr.head.ref}`
+              });
+              core.info(`Deleted branch ${pr.head.ref}.`);
+            } catch (error) {
+              core.warning(`Could not delete branch ${pr.head.ref}: ${error.message}`);
+            }
