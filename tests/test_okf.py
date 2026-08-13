@@ -10,11 +10,11 @@ foreign OKF bundle whose free-form ``type`` and unknown keys must land in the
 
 from time import perf_counter
 
+import yaml  # type: ignore[import-untyped]
+
 from memanto.app.services.okf_export_service import OkfExportService
 from memanto.cli.migrate.mappers import map_okf
 from memanto.cli.migrate.okf_loader import load_okf_bundle
-
-import yaml  # type: ignore[import-untyped]
 
 
 def _mem(mem_id, title, content, **extra):
@@ -241,10 +241,8 @@ def test_okf_export_splits_comma_separated_tags(tmp_path):
             _mem("f1", "Postgres", "Use PG 16.", tags="project, db, prod"),
         ],
     }
-    result = svc.write_okf_bundle("agent1", memories_by_type, split="file")
-    fact_md = (
-        svc.exports_dir / "agent1_okf" / "memories" / "fact" / "postgres.md"
-    )
+    svc.write_okf_bundle("agent1", memories_by_type, split="file")
+    fact_md = svc.exports_dir / "agent1_okf" / "memories" / "fact" / "postgres.md"
     front = fact_md.read_text(encoding="utf-8").split("---", 2)[1]
     fm = yaml.safe_load(front)
     assert set(fm["tags"]) == {"project", "db", "prod"}
@@ -260,9 +258,6 @@ def test_okf_export_preserves_list_tags(tmp_path):
         ],
     }
     svc.write_okf_bundle("agent1", memories_by_type, split="file")
-    fact_md = (
-        svc.exports_dir / "agent1_okf" / "memories" / "fact" / "a-fact.md"
-    )
+    fact_md = svc.exports_dir / "agent1_okf" / "memories" / "fact" / "a-fact.md"
     fm = yaml.safe_load(fact_md.read_text(encoding="utf-8").split("---", 2)[1])
     assert set(fm["tags"]) == {"infra", "db"}
-

@@ -21,7 +21,6 @@ from memanto.app.core import MemoryRecord
 from memanto.app.models.session import AgentCreate, AgentPattern, Session, SessionStatus
 from memanto.app.services.agent_service import AgentService
 from memanto.app.services.session_service import SessionService
-from memanto.app.utils.errors import AgentAlreadyExistsError
 from memanto.app.utils.errors import InvalidSessionTokenError
 
 
@@ -814,7 +813,9 @@ class TestAgentService:
         agent_service.create_agent(agent_create, settings.MOORCHEH_API_KEY)
 
         # Simulate a stale per-agent lock left by an interrupted create flow.
-        lock_file = agent_service._get_agent_file("test-agent").with_suffix(".json.lock")
+        lock_file = agent_service._get_agent_file("test-agent").with_suffix(
+            ".json.lock"
+        )
         lock_file.write_text("")
         assert lock_file.exists()
 

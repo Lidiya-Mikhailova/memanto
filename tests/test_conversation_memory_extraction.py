@@ -144,29 +144,30 @@ def test_conversation_text_truncates_after_budget():
     assert text == expected
     assert len(text) <= service.MAX_CONTENT_CHARS
 
+
 def test_conversation_text_exact_budget_boundary_with_separator():
     """Verify that when line lengths plus the newline separator exactly reach
     MAX_CONTENT_CHARS, the second message is included, but if it exceeds by 1,
     it is excluded."""
     service = ConversationMemoryExtractionService(FakeClient("[]"))
-    
+
     prefix1 = "user: "
     prefix2 = "assistant: "
-    
+
     avail = service.MAX_CONTENT_CHARS - len(prefix1) - 1 - len(prefix2)
     len1 = avail // 2
     len2 = avail - len1
-    
+
     text_exact = service._conversation_text(
         [
             {"role": "user", "content": "a" * len1},
             {"role": "assistant", "content": "b" * len2},
         ]
     )
-    
+
     assert "assistant: b" in text_exact
     assert len(text_exact) == service.MAX_CONTENT_CHARS
-    
+
     text_exceeds = service._conversation_text(
         [
             {"role": "user", "content": "a" * len1},

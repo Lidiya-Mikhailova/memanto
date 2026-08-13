@@ -1225,7 +1225,9 @@ class TestMEMANTOCLI:
             date="2026-07-30",
         )
 
-    def test_list_conflicts_exposes_stable_full_report_index(self, tmp_path, monkeypatch):
+    def test_list_conflicts_exposes_stable_full_report_index(
+        self, tmp_path, monkeypatch
+    ):
         """Unresolved conflicts keep their original full-report index."""
         agent_id, date = "agent-1", "2026-07-01"
         _write_conflict_report(
@@ -1277,7 +1279,10 @@ class TestMEMANTOCLI:
 
         report = json.loads(
             (
-                tmp_path / ".memanto" / "conflicts" / f"{agent_id}_{date}_conflicts.json"
+                tmp_path
+                / ".memanto"
+                / "conflicts"
+                / f"{agent_id}_{date}_conflicts.json"
             ).read_text(encoding="utf-8")
         )
         by_title = {row["title"]: row for row in report}
@@ -1289,7 +1294,9 @@ class TestMEMANTOCLI:
     ):
         """Resolved conflicts cannot be resolved again by stale indexes."""
         agent_id, date = "agent-1", "2026-07-01"
-        _write_conflict_report(tmp_path, agent_id, date, [_conflict("A"), _conflict("B")])
+        _write_conflict_report(
+            tmp_path, agent_id, date, [_conflict("A"), _conflict("B")]
+        )
         client, mock_write = _make_direct_client(tmp_path, monkeypatch)
 
         client.resolve_conflict(agent_id, date, conflict_index=0, action="keep_new")

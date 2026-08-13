@@ -3320,7 +3320,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File",
             "description": "File to upload (.pdf, .docx, .xlsx, .json, .txt, .csv, .md)"
           }
