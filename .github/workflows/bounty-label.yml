@@ -92,7 +92,7 @@ jobs:
                 per_page: 100,
               });
 
-              const refPattern = new RegExp(`#${issueNumber}(?!\\d)`);
+              const refPattern = new RegExp(`(?:#|issues\\/|pull\\/)${issueNumber}(?!\\d)`);
               return prs.filter((pr) => {
                 const text = `${pr.title}\n${pr.body ?? ""}`;
                 return refPattern.test(text);
@@ -158,7 +158,7 @@ jobs:
             async function labelPr(pr) {
               const text = `${pr.title}\n${pr.body ?? ""}`;
               const issueNumbers = new Set(
-                [...text.matchAll(/#(\d+)/g)].map((m) => parseInt(m[1], 10))
+                [...text.matchAll(/(?:#|issues\/|pull\/)(\d+)/g)].map((m) => parseInt(m[1], 10))
               );
 
               if (issueNumbers.size === 0) {
