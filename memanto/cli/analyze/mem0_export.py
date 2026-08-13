@@ -167,7 +167,20 @@ def paginate_memories(
         if not batch:
             break
         all_memories.extend(batch)
-        if not last_page.get("next"):
+
+        if "next" not in last_page or (
+            last_page["next"] is not None and not last_page["next"]
+        ):
+            raise RuntimeError(
+                f"Mem0 /v3/memories/ response missing 'next' field: {response!r}"
+            )
+
+        if last_page["next"] is not None and not isinstance(last_page["next"], str):
+            raise RuntimeError(
+                f"Mem0 /v3/memories/ 'next' field must be a URL string or null: {response!r}"
+            )
+
+        if not last_page["next"]:
             break
         page += 1
 
