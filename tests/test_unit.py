@@ -827,7 +827,10 @@ class TestAgentService:
 
         # Verify deleted
         assert not agent_service.agent_exists("test-agent")
-        assert not lock_file.exists()
+
+        # Verify it can be recreated even if the lock file was left behind
+        agent_service.create_agent(agent_create, settings.MOORCHEH_API_KEY)
+        assert agent_service.agent_exists("test-agent")
 
         print("✅ Agent deleted successfully")
 

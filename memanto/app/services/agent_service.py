@@ -228,14 +228,13 @@ class AgentService:
             AgentNotFoundError: If agent doesn't exist
         """
         agent_file = self._get_agent_file(agent_id)
-        if not agent_file.exists():
-            raise AgentNotFoundError(f"Agent '{agent_id}' not found")
-
-        agent_file.unlink()
-
-        # Best-effort cleanup: remove stale lock left by interrupted create.
         lock_file = agent_file.with_suffix(".json.lock")
-        lock_file.unlink(missing_ok=True)
+
+        with FileLock(str(lock_file), timeout=5):
+            if not agent_file.exists():
+                raise AgentNotFoundError(f"Agent '{agent_id}' not found")
+
+            agent_file.unlink()
 
     def agent_exists(self, agent_id: str) -> bool:
         """

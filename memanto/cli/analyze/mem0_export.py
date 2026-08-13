@@ -146,8 +146,24 @@ def paginate_memories(
             params=params,
             json={"filters": filters},
         )
-        last_page = response if isinstance(response, dict) else {}
-        batch = last_page.get("results") or []
+
+        if not isinstance(response, dict):
+            raise RuntimeError(
+                f"Mem0 /v3/memories/ returned non-JSON object: {response!r}"
+            )
+
+        if "results" not in response:
+            raise RuntimeError(
+                f"Mem0 /v3/memories/ response missing 'results' array: {response!r}"
+            )
+
+        batch = response["results"]
+        if not isinstance(batch, list):
+            raise RuntimeError(
+                f"Mem0 /v3/memories/ 'results' is not a list: {response!r}"
+            )
+
+        last_page = response
         if not batch:
             break
         all_memories.extend(batch)

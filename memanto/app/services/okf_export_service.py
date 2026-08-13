@@ -209,6 +209,11 @@ class OkfExportService:
         after NFC normalization plus case folding, so the bundle is portable to
         case-insensitive filesystems.
         """
+        if section_dir.exists():
+            for existing_file in section_dir.iterdir():
+                if existing_file.is_file():
+                    existing_file.unlink(missing_ok=True)
+
         existing = sorted(f for f in files if f.exists())
         if not existing:
             return 0
