@@ -713,6 +713,23 @@ class TestAgentService:
         print(f"   Agent ID: {agent.agent_id}")
         print(f"   Namespace: {agent.namespace}")
 
+    def test_create_agent_recovers_from_stale_lock_file(self, agent_service):
+        """A crash-left lock marker must not permanently reserve an agent ID."""
+        agent_service.agents_dir.mkdir(parents=True)
+        stale_lock = agent_service.agents_dir / "recovered-agent.json.lock"
+        stale_lock.write_text("orphaned by a terminated process", encoding="utf-8")
+
+        agent = agent_service.create_agent(
+            AgentCreate(
+                agent_id="recovered-agent",
+                pattern=AgentPattern.SUPPORT,
+            ),
+            settings.MOORCHEH_API_KEY,
+        )
+
+        assert agent.agent_id == "recovered-agent"
+        assert agent_service.agent_exists("recovered-agent")
+
     def test_list_agents(self, agent_service):
         """Test listing agents"""
         # Create multiple agents
@@ -795,6 +812,13 @@ class TestAgentService:
         agent_create = AgentCreate(agent_id="test-agent", pattern=AgentPattern.SUPPORT)
         agent_service.create_agent(agent_create, settings.MOORCHEH_API_KEY)
 
+        # Simulate a stale per-agent lock left by an interrupted create flow.
+        lock_file = agent_service._get_agent_file("test-agent").with_suffix(
+            ".json.lock"
+        )
+        lock_file.write_text("")
+        assert lock_file.exists()
+
         # Verify exists
         assert agent_service.agent_exists("test-agent")
 
@@ -803,6 +827,10 @@ class TestAgentService:
 
         # Verify deleted
         assert not agent_service.agent_exists("test-agent")
+
+        # Verify it can be recreated even if the lock file was left behind
+        agent_service.create_agent(agent_create, settings.MOORCHEH_API_KEY)
+        assert agent_service.agent_exists("test-agent")
 
         print("✅ Agent deleted successfully")
 
