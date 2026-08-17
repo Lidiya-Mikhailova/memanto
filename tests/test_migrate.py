@@ -1,7 +1,8 @@
-"""Focused regression tests for migration runner helpers."""
+"""Focused regression tests for migration tools and mappers."""
 
 import pytest
 
+from memanto.cli.migrate.mappers import map_mem0
 from memanto.cli.migrate.runner import load_export
 
 
@@ -16,3 +17,21 @@ class TestMigrateLoadExport:
 
         with pytest.raises(ValueError, match="must be a JSON object"):
             load_export(export_path)
+
+
+def test_map_mem0_accepts_single_category_string():
+    rows = map_mem0(
+        {
+            "memories": [
+                {
+                    "id": "mem-1",
+                    "memory": "The user prefers concise PR summaries.",
+                    "categories": "personal_preferences",
+                }
+            ]
+        }
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["type"] == "preference"
+    assert rows[0]["tags"] == ["personal_preferences"]
