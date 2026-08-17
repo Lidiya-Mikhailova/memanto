@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator
 from memanto.app.constants import (
     MemoryType,
     ProvenanceType,
+    StatusType,
 )
 
 MemoryTag = Annotated[
@@ -88,6 +89,7 @@ class MemoryRecord(BaseModel):
     source: MemorySource
     source_ref: BoundedSourceRef | None = None
     confidence: float = Field(ge=0.0, le=1.0, default=0.8)
+    status: StatusType = "active"
     tags: BoundedTags = Field(default_factory=list)
 
     # Provenance
@@ -123,6 +125,7 @@ class MemoryRecord(BaseModel):
             "actor_id": self.actor_id,
             "source": self.source,
             "confidence": self.confidence,
+            "status": self.status,
             # Provenance
             "provenance": self.provenance,
             # Timestamps

@@ -112,6 +112,7 @@ def test_memanto_round_trip_preserves_extras(tmp_path):
                 confidence=0.9,
                 provenance="explicit_statement",
                 source="user",
+                status="active",
                 created_at="2026-05-28T14:30:00Z",
                 source_ref="https://example.com/db",
             )

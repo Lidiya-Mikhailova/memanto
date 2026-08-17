@@ -899,6 +899,7 @@ class TestMemoryWriteServiceDelete:
             "actor_id": "tester",
             "source": "system",
             "confidence": 0.8,
+            "status": "active",
             "tags": [],
         }
 
@@ -929,6 +930,7 @@ class TestMemoryWriteServiceDelete:
             "actor_id": "tester",
             "source": "manual",
             "confidence": 0.8,
+            "status": "active",
             "tags": [],
             # Extra field not in the MemoryRecord schema (e.g. on-prem data_store.json).
             "original_id": "orig-123",
@@ -964,6 +966,7 @@ class TestMemoryWriteServiceDelete:
             "actor_id": "tester",
             "source": source,
             "confidence": 0.8,
+            "status": "active",
         }
 
         with patch(
@@ -1010,6 +1013,7 @@ class TestMemoryWriteServiceUpdateIntegrity:
                         "source": "test",
                         "source_ref": "issue-770",
                         "confidence": 0.95,
+                        "status": "active",
                         "tags": "integrity",
                         "provenance": "validated",
                     },
@@ -1044,6 +1048,7 @@ class TestMemoryWriteServiceUpdateIntegrity:
             "actor_id": "user",
             "source": "test",
             "confidence": 0.9,
+            "status": "active",
             "tags": [],
         }
 
@@ -1086,6 +1091,7 @@ class TestMemoryWriteServiceUpdateIntegrity:
             "actor_id": "user",
             "source": "test",
             "confidence": 0.9,
+            "status": "active",
             "tags": [],
         }
 
@@ -1149,6 +1155,7 @@ class TestMemoryReadServiceFormatting:
             "metadata": {
                 "memory_type": "fact",
                 "confidence": 0.0,
+                "status": "active",
                 "tags": [],
                 "validation_count": 0,
                 "contradiction_detected": False,
@@ -1251,6 +1258,7 @@ class TestMemoryWriteServiceUpdate:
                     "actor_id": "user",
                     "source": "user",
                     "confidence": 0.8,
+                    "status": "active",
                     "created_at": "2026-01-01T00:00:00Z",
                     "updated_at": "2026-01-01T00:00:00Z",
                     "expires_at": "2099-01-02T00:00:00Z",
@@ -1357,6 +1365,7 @@ class TestMemoryReadServiceVersionSelection:
                     "scope_id": "agent-1",
                     "actor_id": "agent-1",
                     "source": "agent",
+                    "status": "active",
                     "confidence": 0.8,
                     "created_at": "2026-06-01T00:00:00+00:00",
                     "updated_at": "2026-06-01T00:00:00+00:00",
@@ -1369,6 +1378,7 @@ class TestMemoryReadServiceVersionSelection:
                     "scope_id": "agent-1",
                     "actor_id": "agent-1",
                     "source": "agent",
+                    "status": "active",
                     "confidence": 0.9,
                     "created_at": "2026-06-01T00:00:00+00:00",
                     "updated_at": "2026-06-15T12:00:00+00:00",
@@ -2214,6 +2224,7 @@ class TestMemoryExportService:
                         "confidence": 0.9,
                         "tags": ["ops\n## fake-tag"],
                         "created_at": "2026-07-01T09:00:00Z",
+                        "status": "active",
                     }
                 ]
             },

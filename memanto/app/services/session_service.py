@@ -636,12 +636,15 @@ class SessionService:
         memory_id = memory_id or getattr(memory_record, "id", None)
         source = getattr(memory_record, "source", None)
         provenance = getattr(memory_record, "provenance", None)
+        status = getattr(memory_record, "status", None)
         tags = getattr(memory_record, "tags", None)
 
         lines = [f"### [{timestamp}] [{memory_type}] {title}\n"]
         if memory_id:
             lines.append(f"- **Memory ID**: `{memory_id}`\n")
         lines.append(f"- **Confidence**: `{confidence}`\n")
+        if status:
+            lines.append(f"- **Status**: `{status}`\n")
         if source:
             lines.append(f"- **Source**: `{source}`\n")
         if provenance:

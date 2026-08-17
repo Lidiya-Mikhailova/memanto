@@ -14,6 +14,7 @@ class _FakeSimilaritySearch:
                 "actor_id": "agent-1",
                 "source": "user",
                 "confidence": 0.91,
+                "status": "active",
                 "created_at": "2026-06-25T00:00:00Z",
                 "updated_at": "2026-06-25T00:00:00Z",
             },
@@ -26,6 +27,7 @@ class _FakeSimilaritySearch:
                 "actor_id": "agent-1",
                 "source": "user",
                 "confidence": 0.41,
+                "status": "active",
                 "created_at": "2026-06-25T00:00:00Z",
                 "updated_at": "2026-06-25T00:00:00Z",
             },
@@ -71,6 +73,7 @@ def test_zero_min_confidence_preserves_results_without_confidence_field():
                 "scope_id": "agent-1",
                 "actor_id": "agent-1",
                 "source": "user",
+                "status": "active",
                 "created_at": "2026-06-25T00:00:00Z",
                 "updated_at": "2026-06-25T00:00:00Z",
             }

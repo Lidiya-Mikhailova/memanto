@@ -63,6 +63,7 @@ def test_concurrent_summary_writes_create_one_header(monkeypatch, tmp_path):
             f"### [2026-07-20 12:00:0{index}] [FACT] concurrent-{index}\n"
             f"- **Memory ID**: `mem-{index}`\n"
             "- **Confidence**: `0.8`\n"
+            "- **Status**: `active`\n"
             "- **Source**: `agent`\n"
             "- **Provenance**: `explicit_statement`\n"
             "- **Content**:\n"

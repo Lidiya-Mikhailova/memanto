@@ -673,6 +673,7 @@ class TestMEMANTOCLI:
             namespace="memanto_agent_old-agent",
             started_at=utc_now() - timedelta(minutes=5),
             expires_at=utc_now() + timedelta(hours=1),
+            status="active",
         )
         new_session = Session(
             session_id="sess-new",
@@ -681,6 +682,7 @@ class TestMEMANTOCLI:
             namespace="memanto_agent_new-agent",
             started_at=utc_now(),
             expires_at=utc_now() + timedelta(hours=1),
+            status="active",
         )
 
         session_service = MagicMock()
@@ -954,6 +956,7 @@ class TestMEMANTOCLI:
         """Test 'memanto session info'"""
         mock_all_clients.get_session_info.return_value = {
             "agent_id": "test-agent",
+            "status": "active",
             "time_remaining_seconds": 3600,
             "session_id": "test-session",
             "namespace": "memanto_agent_test-agent",

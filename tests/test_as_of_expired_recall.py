@@ -17,6 +17,7 @@ def _memory(memory_id: str, created_at: str, expires_at: str | None = None) -> d
         "actor_id": "agent-1",
         "source": "user",
         "confidence": 0.9,
+        "status": "active",
         "created_at": created_at,
         "updated_at": created_at,
     }
