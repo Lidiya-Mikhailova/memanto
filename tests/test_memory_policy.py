@@ -514,6 +514,21 @@ class TestPolicyPersistence:
         assert loaded.retention == policy.retention
         assert [r.name for r in loaded.rules] == [r.name for r in policy.rules]
         assert loaded.purge_expired_after == policy.purge_expired_after
+        # Match conditions must survive the exclude_none round trip.
+        by_name = {r.name: r for r in loaded.rules}
+        assert by_name["scratch-notes"].match.tags == ["scratch", "temp"]
+        assert by_name["low-confidence-guesses"].match.confidence_below == 0.5
+        assert by_name["low-confidence-guesses"].match.provenance == ["inferred"]
+
+    def test_saved_file_omits_unset_match_conditions(self, tmp_path):
+        """The policy file is hand-edited, so unset conditions must not appear."""
+        service = MemoryPolicyService(_FakeClient([]), policies_dir=tmp_path)
+        service.save_policy("alpha", load_preset("balanced"))
+
+        text = (tmp_path / "alpha.yaml").read_text(encoding="utf-8")
+
+        assert "null" not in text
+        assert "tags:" in text and "expire_after:" in text
 
     def test_rejects_agent_id_path_traversal(self, tmp_path):
         service = MemoryPolicyService(_FakeClient([]), policies_dir=tmp_path)

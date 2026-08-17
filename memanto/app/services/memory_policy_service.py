@@ -320,10 +320,13 @@ class MemoryPolicyService:
 
         path = self._policy_file(agent_id)
         self.policies_dir.mkdir(parents=True, exist_ok=True)
+        # exclude_none keeps unset match conditions out of the file. Without it
+        # every rule carries `type: null`, `source: null`, ... which buries the
+        # two lines that actually matter in a file users hand-edit.
         atomic_write_text(
             path,
             yaml.safe_dump(
-                policy.model_dump(mode="json"),
+                policy.model_dump(mode="json", exclude_none=True),
                 sort_keys=False,
                 default_flow_style=False,
             ),
@@ -366,6 +369,12 @@ class MemoryPolicyService:
 
         read_service = self._read_service()
         memories = read_service._fetch_all_memories([namespace], status="active")
+        # Counted only so callers can explain the two populations apart: a sweep
+        # acts on active memories, while `purge_expired_after` acts on the
+        # already-expired ones. Reporting one without the other reads as a bug.
+        already_expired = len(
+            read_service._fetch_all_memories([namespace], status="expired")
+        )
 
         matched: list[dict[str, Any]] = []
         for memory in memories:
@@ -412,6 +421,7 @@ class MemoryPolicyService:
             "dry_run": dry_run,
             "policy_is_empty": policy.is_empty(),
             "scanned": len(memories),
+            "already_expired": already_expired,
             "matched": len(matched),
             "expired": expired_count,
             "per_rule": per_rule,

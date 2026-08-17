@@ -3467,13 +3467,19 @@
             let html = `<table><thead><tr><th>Title</th><th>Type</th><th>Source</th><th>Confidence</th><th>Status</th><th>Provenance</th><th>Created</th><th>Tags</th></tr></thead><tbody>`;
             mems.forEach((m) => {
                 const tags = Array.isArray(m.tags) ? m.tags.filter(t => t).join(', ') : (m.tags || '');
-                // Expired memories keep their content; the badge carries when
-                // and why so the reason is visible without opening the row.
+                // Expired memories keep their content. Show the rule that
+                // expired them and when, inline rather than in a hover tooltip
+                // — the reason is the whole point of a stamped expiry, so it
+                // should be readable without discovering that a tooltip exists.
                 let statusBadge;
                 if (m.status === 'expired') {
-                    const why = [m.expired_by, m.expired_at ? fmtDate(m.expired_at) : null]
-                        .filter(Boolean).join(' · ');
-                    statusBadge = `<span class="badge badge-warning" title="${attrEsc(why || 'expired')}">expired</span>`;
+                    statusBadge = '<span class="badge badge-warning">expired</span>';
+                    const why = [];
+                    if (m.expired_by) why.push(escHtml(m.expired_by));
+                    if (m.expired_at) why.push(escHtml(fmtDate(m.expired_at)));
+                    if (why.length) {
+                        statusBadge += `<div style="font-size:11px;color:var(--text-dim);margin-top:3px;line-height:1.3">${why.join('<br>')}</div>`;
+                    }
                 } else {
                     statusBadge = '<span class="badge badge-success">active</span>';
                 }

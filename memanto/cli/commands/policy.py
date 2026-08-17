@@ -81,12 +81,19 @@ def _render_policy(policy: dict, agent_id: str) -> None:
     else:
         console.print("[dim]No rules set.[/dim]")
 
-    purge_label = (
-        f"[{WARNING}]{purge}[/{WARNING}]"
-        if purge != "never"
-        else f"[{DIM}]never[/{DIM}]"
-    )
-    console.print(f"\n[dim]Purge expired after:[/dim] {purge_label}")
+    # Spelled out because "purge expired after: 1m" reads like "things expire
+    # after 1m" at a glance. It governs deletion of already-expired memories
+    # and has no effect on what `policy apply` expires.
+    if purge != "never":
+        console.print(
+            f"\n[{WARNING}]Purge:[/{WARNING}] memories already expired for "
+            f"longer than [{WARNING}]{purge}[/{WARNING}] are permanently "
+            f"deleted by 'memanto policy purge'."
+        )
+    else:
+        console.print(
+            "\n[dim]Purge: disabled — expired memories are kept forever.[/dim]"
+        )
     console.print(f"[dim]Agent: {agent_id}[/dim]")
 
 
@@ -255,12 +262,21 @@ def policy_apply(
 
     matched = report.get("matched", 0)
     scanned = report.get("scanned", 0)
+    already_expired = report.get("already_expired", 0)
 
     if matched == 0:
         console.print(
             f"\n[green]Nothing to expire.[/green] "
-            f"[dim]{scanned} active memories scanned.[/dim]"
+            f"[dim]{scanned} active memories scanned; none are past their "
+            f"retention window yet.[/dim]"
         )
+        if already_expired:
+            # `purge_expired_after` governs these, not the retention table —
+            # a common source of "why did apply say 0 but purge say 1?".
+            console.print(
+                f"[dim]{already_expired} already expired "
+                f"(not rescanned; 'memanto policy purge' governs those).[/dim]"
+            )
         return
 
     per_rule = report.get("per_rule") or {}
