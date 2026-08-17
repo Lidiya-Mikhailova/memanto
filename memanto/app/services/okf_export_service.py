@@ -23,6 +23,7 @@ frontmatter keys.
 
 import re
 import shutil
+import tempfile
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +32,7 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 from memanto.app.services.memory_export_service import MEMORY_TYPE_ORDER
+from memanto.app.utils.atomic_write import okf_bundle_lock
 from memanto.app.utils.validation import validate_output_path, validate_safe_id
 
 # Stacked files hold multiple OKF documents. This sentinel separates them so
@@ -107,37 +109,52 @@ class OkfExportService:
             )
             assert validated is not None
             base = validated
-        base.mkdir(parents=True, exist_ok=True)
+        if base.exists() and not base.is_dir():
+            raise NotADirectoryError(f"OKF bundle path is not a directory: {base}")
+        base.parent.mkdir(parents=True, exist_ok=True)
 
-        # Section order mirrors how an agent would read the bundle.
-        sections: dict[str, str] = {}
-
-        type_entries = self._write_memories_section(
-            base / "memories", memories_by_type, split, threshold
+        # Render the complete snapshot away from the current bundle. Writing
+        # directly into ``base`` overlays new files on old ones, which can
+        # resurrect deleted or renamed memories on the next import. Staging
+        # also leaves the last good bundle intact if rendering fails midway.
+        staging = Path(
+            tempfile.mkdtemp(prefix=f".{base.name}.tmp-", dir=str(base.parent))
         )
-        per_type_counts = dict(type_entries)
-        total = sum(per_type_counts.values())
-        if type_entries:
-            sections["memories"] = (
-                f"{total} memories across {len(type_entries)} type(s)"
+
+        try:
+            # Section order mirrors how an agent would read the bundle.
+            sections: dict[str, str] = {}
+
+            type_entries = self._write_memories_section(
+                staging / "memories", memories_by_type, split, threshold
             )
+            per_type_counts = dict(type_entries)
+            total = sum(per_type_counts.values())
+            if type_entries:
+                sections["memories"] = (
+                    f"{total} memories across {len(type_entries)} type(s)"
+                )
 
-        n_summaries = self._write_docs_section(
-            base / "daily-summaries", summaries or [], "Daily Summaries"
-        )
-        if n_summaries:
-            sections["daily-summaries"] = f"{n_summaries} daily-summary file(s)"
+            n_summaries = self._write_docs_section(
+                staging / "daily-summaries", summaries or [], "Daily Summaries"
+            )
+            if n_summaries:
+                sections["daily-summaries"] = f"{n_summaries} daily-summary file(s)"
 
-        n_sessions = self._write_docs_section(
-            base / "sessions", sessions or [], "Sessions"
-        )
-        if n_sessions:
-            sections["sessions"] = f"{n_sessions} session log file(s)"
+            n_sessions = self._write_docs_section(
+                staging / "sessions", sessions or [], "Sessions"
+            )
+            if n_sessions:
+                sections["sessions"] = f"{n_sessions} session log file(s)"
 
-        if self._write_metrics_section(base / "metrics", memories_by_type):
-            sections["metrics"] = "aggregate stats & visualizations"
+            if self._write_metrics_section(staging / "metrics", memories_by_type):
+                sections["metrics"] = "aggregate stats & visualizations"
 
-        self._write_root_index(base, agent_id, sections)
+            self._write_root_index(staging, agent_id, sections)
+            self._replace_bundle(staging, base)
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)
 
         return {
             "output_path": str(base.resolve()),
@@ -145,6 +162,34 @@ class OkfExportService:
             "per_type_counts": per_type_counts,
             "sections": list(sections),
         }
+
+    @staticmethod
+    def _replace_bundle(staging: Path, target: Path) -> None:
+        """Swap a fully rendered bundle into place, restoring the previous
+        snapshot if the final rename fails."""
+        # Readers share this path-scoped lock with the loader, and competing
+        # exporters take the same exclusive lock. No caller can therefore
+        # observe or interfere with the brief target -> backup -> target swap.
+        with okf_bundle_lock(target, shared=False):
+            backup: Path | None = None
+            if target.exists():
+                backup = Path(
+                    tempfile.mkdtemp(
+                        prefix=f".{target.name}.backup-", dir=str(target.parent)
+                    )
+                )
+                backup.rmdir()
+                target.rename(backup)
+
+            try:
+                staging.rename(target)
+            except Exception:
+                if backup is not None and backup.exists() and not target.exists():
+                    backup.rename(target)
+                raise
+            else:
+                if backup is not None:
+                    shutil.rmtree(backup)
 
     # Section writers
     def _write_memories_section(
