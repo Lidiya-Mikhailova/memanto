@@ -151,3 +151,14 @@ the dump wholesale.
 - `ruff format --check .` → clean
 - `mypy memanto` → no issues (legacy excluded)
 - `import memanto.app.main` / `import memanto.cli.main` → OK
+
+---
+
+## 5. Removal of logging.py and metrics.py (2026-08-17)
+
+Both `memanto/app/utils/logging.py` and `memanto/app/utils/metrics.py` were discovered to be entirely dead code. 
+
+- `logging.py` (and `MemantoLogger`, `track_moorcheh_call`) had zero inbound references from active code, and were only imported by files already moved to `legacy/`.
+- `metrics.py` (`MemantoMetrics`, `MetricsCollector`) had zero inbound references anywhere in the project.
+
+These were moved to `legacy/` wholesale.
