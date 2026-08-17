@@ -38,15 +38,6 @@ ProvenanceType = Literal[
     "imported",
 ]
 
-# Validation Modes
-ValidationMode = Literal["strict", "lenient", "off"]
-
-# Actor Types
-ActorType = Literal["user", "agent", "system"]
-
-# Source Enumerations for Provenance
-ProvenanceSource = Literal["user", "agent", "tool", "system"]
-
 # Valid Lists for runtime checks
 VALID_MEMORY_TYPES = {
     "fact",

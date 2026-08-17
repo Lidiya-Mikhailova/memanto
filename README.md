@@ -114,7 +114,7 @@ There is no lock-in because there is nothing to lock.
 
 **Scoped by default.** Each agent gets its own namespace. Your production-ops agent doesn't read your scratch experiments; you provision exactly what each one should know and nothing more.
 
-**Every belief is traceable.** Confidence score, source, timestamp, and what it superseded. When an agent acts on something, you can walk back to where that belief entered the fleet and when — which is the difference between an auditable estate and a black box.
+**Every belief is traceable.** Confidence score, source, provenance, and timestamp. When an agent acts on something, you can walk back to where that belief entered the fleet and when — which is the difference between an auditable estate and a black box.
 
 ---
 

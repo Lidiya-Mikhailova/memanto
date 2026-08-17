@@ -3459,8 +3459,7 @@
             mems.forEach((m) => {
                 const tags = Array.isArray(m.tags) ? m.tags.filter(t => t).join(', ') : (m.tags || '');
                 const statusBadge = m.status === 'active' ? '<span class="badge badge-success">active</span>' :
-                    m.status === 'superseded' ? '<span class="badge badge-warning">superseded</span>' :
-                        `<span class="badge badge-info">${escHtml(m.status || '—')}</span>`;
+                    `<span class="badge badge-info">${escHtml(m.status || '—')}</span>`;
                 const provBadge = m.provenance ? `<span class="badge badge-accent">${escHtml(m.provenance)}</span>` : '—';
                 const mJson = attrEsc(JSON.stringify(m));
                 html += `<tr class="${expandable ? 'expandable' : ''}" ${expandable ? 'onclick="toggleRow(this)"' : ''}>

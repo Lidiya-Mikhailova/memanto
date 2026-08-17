@@ -19,7 +19,6 @@ from memanto.app.utils.temporal_helpers import get_yesterday_range, utc_date_str
 from memanto.cli.commands._shared import (
     BOLD_PRIMARY,
     BRIGHT,
-    DIM,
     PRIMARY,
     SUCCESS,
     _error,
@@ -651,8 +650,6 @@ def recall(
             score = _as_float(memory.get("score"))
             mem_type = memory.get("type") or "unknown"
             conf = _as_float(memory.get("confidence"))
-            comp_conf_raw = memory.get("computed_confidence")
-            comp_conf = _as_float(comp_conf_raw) if comp_conf_raw is not None else None
             title = memory.get("title") or "Untitled"
             content = memory.get("content") or ""
             created = memory.get("created_at") or ""
@@ -675,11 +672,7 @@ def recall(
             # Create panel for each memory
             panel_content = f"[bold]{title}[/bold]\n\n{content[:200]}{'...' if len(content) > 200 else ''}\n\n"
 
-            # Show ID and confidence (computed if available)
-            if comp_conf is not None:
-                panel_content += f"[dim]ID: {id_str} | Type: {mem_type} | Confidence: {comp_conf:.2f} (computed) | Score: {score:.3f}[/dim]"
-            else:
-                panel_content += f"[dim]ID: {id_str} | Type: {mem_type} | Confidence: {conf:.2f} | Score: {score:.3f}[/dim]"
+            panel_content += f"[dim]ID: {id_str} | Type: {mem_type} | Confidence: {conf:.2f} | Score: {score:.3f}[/dim]"
 
             if created:
                 panel_content += f"\n[dim]Created: {format_local_time(created)}[/dim]"
@@ -713,9 +706,7 @@ def recall(
 
             # Determine border style
             border_style = BRIGHT if score > 0.8 else PRIMARY
-            if status == "superseded":
-                border_style = DIM
-            elif change_type == "created":
+            if change_type == "created":
                 border_style = SUCCESS
 
             console.print(

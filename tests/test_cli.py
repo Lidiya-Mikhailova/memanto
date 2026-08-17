@@ -291,7 +291,6 @@ class TestMEMANTOCLI:
                     "content": "Prefers concise reports",
                     "type": "preference",
                     "confidence": "0.75",
-                    "computed_confidence": "0.66",
                     "score": "0.812",
                     "tags": ["ux"],
                 },
@@ -312,7 +311,7 @@ class TestMEMANTOCLI:
         assert result.exit_code == 0
         assert "Stored preference" in result.stdout
         assert "Stored fact" in result.stdout
-        assert "Confidence: 0.66 (computed) | Score: 0.812" in result.stdout
+        assert "Confidence: 0.75 | Score: 0.812" in result.stdout
         assert "Confidence: 0.41 | Score: 0.500" in result.stdout
 
     def test_edit(self, mock_all_clients):
