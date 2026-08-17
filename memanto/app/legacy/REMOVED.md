@@ -129,8 +129,9 @@ its namespace is `memanto_agent_{agent_id}` (unchanged on the wire).
   updated to match.
 - `utils/ids.py`: removed the dead `generate_namespace_id` /
   `extract_scope_type_from_namespace` (wrong colon format, unused).
-- `utils/logging.py` + `utils/rate_limiting.py`: dropped the `scope_type` /
-  `scope_id` plumbing params (rate-limit keys are per-agent).
+- `utils/logging.py` dropped the `scope_type` /
+  `scope_id` plumbing params.
+- `utils/rate_limiting.py` moved to `legacy/rate_limiting.py` (rate-limit keys are per-agent).
 
 **`utils/auth.py` → `legacy/auth.py`:** the whole file was the old tenant /
 JWT / multi-scope access-control model (`AuthService`, `authorize_scope`,
