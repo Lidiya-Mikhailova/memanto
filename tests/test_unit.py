@@ -878,6 +878,7 @@ class TestMemoryWriteServiceDelete:
         ],
     )
     def test_delete_memory_handles_backend_shapes(self, response, expected):
+        """Translate known backend delete responses into boolean outcomes."""
         from memanto.app.services.memory_write_service import MemoryWriteService
 
         client = MagicMock()
@@ -1431,6 +1432,54 @@ class TestClientApiKeyDispatch:
 
         assert client._get_moorcheh() is fake_backend
         assert calls == ["mk_instance_specific_key"]
+
+
+class TestSummaryVisualizationService:
+    """Daily summary visualizations should keep per-memory metadata aligned."""
+
+    def test_confidence_lines_do_not_shift_across_memory_blocks(self, tmp_path):
+        """Missing confidence metadata must not consume the next block's value."""
+        from memanto.app.services.summary_visualization_service import (
+            SummaryVisualizationService,
+        )
+
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        summary_path = sessions_dir / "agent-a_2026-06-28_sess-1_summary.md"
+        summary_path.write_text(
+            "\n".join(
+                [
+                    "# Session Summary for agent-a",
+                    "",
+                    "### [2026-06-28 09:00:00] [FACT] Missing confidence",
+                    "- **Content**:",
+                    "> This block intentionally has no confidence line.",
+                    "",
+                    "---",
+                    "",
+                    "### [2026-06-28 10:00:00] [DECISION] Has confidence",
+                    "- **Confidence**: `0.42`",
+                    "- **Content**:",
+                    "> This block has its own confidence line.",
+                    "",
+                    "---",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        memories = SummaryVisualizationService()._parse_session_files(
+            "agent-a",
+            "2026-06-28",
+            sessions_dir,
+        )
+
+        assert [m["title"] for m in memories] == [
+            "Missing confidence",
+            "Has confidence",
+        ]
+        assert [m["confidence"] for m in memories] == [0.8, 0.42]
 
 
 class TestForgetEndToEnd:
