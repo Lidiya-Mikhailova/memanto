@@ -2477,3 +2477,46 @@ def test_ui_static_xss_escapes():
 
     for raw in forbidden_raw_interpolations:
         assert raw not in ui_html
+
+
+def test_client_delete_agent_clears_session_state(
+    tmp_path, monkeypatch, mock_moorcheh_for_tests
+):
+    """Deleting an agent via DirectClient and SdkClient clears persisted session state."""
+    from memanto.app.services.session_service import get_session_service
+    from memanto.cli.client import direct_client as direct_mod
+    from memanto.cli.client.direct_client import DirectClient
+    from memanto.cli.client.sdk_client import SdkClient
+
+    monkeypatch.setattr(
+        "memanto.app.services.agent_service.get_data_dir", lambda: tmp_path
+    )
+    monkeypatch.setattr(
+        "memanto.app.services.session_service.get_data_dir", lambda: tmp_path
+    )
+    monkeypatch.setattr(
+        direct_mod, "MoorchehClient", lambda **_: mock_moorcheh_for_tests
+    )
+
+    session_svc = get_session_service()
+
+    # Test DirectClient
+    d_client = DirectClient(api_key="test-key")
+    d_client._moorcheh = mock_moorcheh_for_tests
+    d_client.create_agent("agent-d", "tool", "direct client test")
+    d_client.activate_agent("agent-d")
+    assert session_svc.get_session("agent-d") is not None
+    assert session_svc.get_active_session() is not None
+
+    d_client.delete_agent("agent-d")
+    assert session_svc.get_session("agent-d") is None
+    assert session_svc.get_active_session() is None
+
+    # Test SdkClient
+    s_client = SdkClient(api_key="test-key")
+    s_client.create_agent("agent-s", "tool", "sdk client test")
+    s_client.activate_agent("agent-s")
+    assert session_svc.get_session("agent-s") is not None
+
+    s_client.delete_agent("agent-s")
+    assert session_svc.get_session("agent-s") is None
