@@ -26,7 +26,15 @@ MemoryType = Literal[
 SourceType = str
 
 # Status Types
-StatusType = Literal["active"]
+# A memory is `active` until an expiry policy, a conflict resolution, or an
+# explicit `memanto memory expire` stamps it `expired`. Expiry is reversible
+# (`restore`); hard deletion is a separate, destructive operation.
+StatusType = Literal["active", "expired"]
+
+VALID_STATUS_TYPES = {"active", "expired"}
+
+# Recall status filters: `all` returns both states, labelled.
+StatusFilter = Literal["all", "active", "expired"]
 
 # Provenance Types
 ProvenanceType = Literal[

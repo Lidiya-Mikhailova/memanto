@@ -223,12 +223,12 @@ class MemoryItem(BaseModel):
     text: str = ""
     type: str | None = None
     confidence: float | None = None
-    status: str | None = None
+    status: str | None = "active"
     tags: list[str] = Field(default_factory=list)
     created_at: str | None = None
     updated_at: str | None = None
-    expires_at: str | None = None
-    ttl_seconds: int | None = None
+    expired_at: str | None = None
+    expired_by: str | None = None
     actor_id: str | None = None
     source: str | None = None
     source_ref: str | None = None

@@ -19,8 +19,10 @@ from memanto.app.utils.temporal_helpers import get_yesterday_range, utc_date_str
 from memanto.cli.commands._shared import (
     BOLD_PRIMARY,
     BRIGHT,
+    DIM,
     PRIMARY,
     SUCCESS,
+    WARNING,
     _error,
     app,
     config_manager,
@@ -669,8 +671,14 @@ def recall(
             else:
                 source_tag = "[cyan] · memory [/cyan]"
 
-            # Create panel for each memory
-            panel_content = f"[bold]{title}[/bold]\n\n{content[:200]}{'...' if len(content) > 200 else ''}\n\n"
+            # Create panel for each memory. Lifecycle state leads the panel so
+            # an expired memory can never be mistaken for a live one at a glance.
+            state_label = (
+                f"[{WARNING}][EXPIRED][/{WARNING}] "
+                if status == "expired"
+                else f"[{SUCCESS}][ACTIVE][/{SUCCESS}] "
+            )
+            panel_content = f"{state_label}[bold]{title}[/bold]\n\n{content[:200]}{'...' if len(content) > 200 else ''}\n\n"
 
             panel_content += f"[dim]ID: {id_str} | Type: {mem_type} | Confidence: {conf:.2f} | Score: {score:.3f}[/dim]"
 
@@ -696,9 +704,14 @@ def recall(
             if mem_tags:
                 panel_content += f"\n[dim]Tags: {', '.join(mem_tags)}[/dim]"
 
-            # Show status for non-standard queries
-            if temporal_mode != "standard" and status != "active":
-                panel_content += f"\n[dim]Status: {status}[/dim]"
+            # Explain the expiry: when it happened and which policy did it.
+            if status == "expired":
+                expired_at = memory.get("expired_at")
+                expired_by = memory.get("expired_by") or "unknown"
+                when = format_local_time(expired_at) if expired_at else "unknown date"
+                panel_content += (
+                    f"\n[{WARNING}]Expired {when} · policy: {expired_by}[/{WARNING}]"
+                )
 
             # Show change type for differential queries
             if change_type:
@@ -706,7 +719,9 @@ def recall(
 
             # Determine border style
             border_style = BRIGHT if score > 0.8 else PRIMARY
-            if change_type == "created":
+            if status == "expired":
+                border_style = DIM
+            elif change_type == "created":
                 border_style = SUCCESS
 
             console.print(
