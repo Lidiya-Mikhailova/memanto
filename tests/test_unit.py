@@ -20,6 +20,7 @@ from memanto.app.config import settings
 from memanto.app.core import MemoryRecord
 from memanto.app.models.session import AgentCreate, AgentPattern, Session, SessionStatus
 from memanto.app.services.agent_service import AgentService
+from memanto.app.services.memory_write_service import MemoryWriteService
 from memanto.app.services.session_service import SessionService
 from memanto.app.utils.errors import InvalidSessionTokenError
 
@@ -657,6 +658,89 @@ class TestMemoryRecord:
         for ttl in (0, -60):
             with pytest.raises(ValueError, match="ttl_seconds must be greater than 0"):
                 memory.set_ttl(ttl)
+
+
+class TestMemoryWriteService:
+    """Unit tests for memory write/update behavior."""
+
+    def test_update_memory_preserves_existing_provenance(self):
+        """Partial updates must not silently downgrade provenance metadata.
+
+        The update path rebuilds a MemoryRecord from stored document metadata.
+        If provenance is omitted there, a `validated`/`corrected`/`inferred`
+        memory is rewritten as the default `explicit_statement`, corrupting
+        memory integrity and future provenance-aware retrieval.
+        """
+        mock_client = MagicMock()
+        mock_client.documents.get.return_value = {
+            "items": [
+                {
+                    "id": "mem-123",
+                    "text": "[FACT] Billing plan\n\nCustomer confirmed enterprise plan.",
+                    "metadata": {
+                        "memory_type": "fact",
+                        "agent_id": "agent-1",
+                        "actor_id": "agent-1",
+                        "source": "user",
+                        "confidence": 0.91,
+                        "status": "active",
+                        "provenance": "validated",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    },
+                }
+            ]
+        }
+        mock_client.documents.delete.return_value = {"actual_deletions": 1}
+        mock_client.documents.upload.return_value = {"status": "success"}
+
+        service = MemoryWriteService(mock_client)
+        service.update_memory(
+            "mem-123",
+            "memanto_agent_agent-1",
+            {"content": "Customer confirmed enterprise plus plan."},
+        )
+
+        uploaded_doc = mock_client.documents.upload.call_args.kwargs["documents"][0]
+        assert uploaded_doc["provenance"] == "validated"
+
+    def test_update_memory_allows_explicit_provenance_override(self):
+        """Explicit provenance updates must take precedence over stored metadata."""
+        mock_client = MagicMock()
+        mock_client.documents.get.return_value = {
+            "items": [
+                {
+                    "id": "mem-123",
+                    "text": "[FACT] Billing plan\n\nCustomer confirmed enterprise plan.",
+                    "metadata": {
+                        "memory_type": "fact",
+                        "agent_id": "agent-1",
+                        "actor_id": "agent-1",
+                        "source": "user",
+                        "confidence": 0.91,
+                        "status": "active",
+                        "provenance": "validated",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    },
+                }
+            ]
+        }
+        mock_client.documents.delete.return_value = {"actual_deletions": 1}
+        mock_client.documents.upload.return_value = {"status": "success"}
+
+        service = MemoryWriteService(mock_client)
+        service.update_memory(
+            "mem-123",
+            "memanto_agent_agent-1",
+            {
+                "content": "Customer confirmed enterprise plus plan.",
+                "provenance": "corrected",
+            },
+        )
+
+        uploaded_doc = mock_client.documents.upload.call_args.kwargs["documents"][0]
+        assert uploaded_doc["provenance"] == "corrected"
 
 
 class TestAgentService:
