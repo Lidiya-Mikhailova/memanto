@@ -1399,15 +1399,26 @@ class SdkClient:
             date: Date string (YYYY-MM-DD).
             conflict_index: Stable 0-based index into the full conflict report
                 (use ``list_conflicts(...)[i]["index"]``).
-            action: Resolution action — ``keep_old``, ``keep_new``,
-                ``keep_both``, ``remove_both``, or ``manual``.
+            action: Resolution action. ``keep_old`` / ``keep_new`` /
+                ``remove_both`` / ``manual`` delete the losing memory
+                permanently; ``expire_old`` / ``expire_new`` / ``expire_both``
+                retire it reversibly instead. ``keep_both`` is a no-op.
             manual_content: Required when action is ``manual``.
             manual_type: Memory type for manual replacement.
 
         Returns:
             Dict with resolution result.
         """
-        valid_actions = {"keep_old", "keep_new", "keep_both", "remove_both", "manual"}
+        valid_actions = {
+            "keep_old",
+            "keep_new",
+            "keep_both",
+            "remove_both",
+            "expire_old",
+            "expire_new",
+            "expire_both",
+            "manual",
+        }
         if action not in valid_actions:
             raise ValueError(
                 f"Invalid action '{action}'. Must be one of: {', '.join(sorted(valid_actions))}"
@@ -1466,6 +1477,31 @@ class SdkClient:
 
         elif action == "keep_both":
             result_details["note"] = "Both memories kept as-is"
+
+        elif action in ("expire_old", "expire_new", "expire_both"):
+            # Retire the losing memory instead of destroying it: the content
+            # and its audit trail survive, and the decision is reversible via
+            # `memanto memory restore`.
+            targets = {
+                "expire_old": [(old_id, "old")],
+                "expire_new": [(new_id, "new")],
+                "expire_both": [(old_id, "old"), (new_id, "new")],
+            }[action]
+            for mem_id, label in targets:
+                if not mem_id:
+                    continue
+                try:
+                    write_service.set_lifecycle(
+                        mem_id,
+                        namespace,
+                        expired=True,
+                        reason="conflict-resolution",
+                    )
+                    result_details[f"expired_{label}"] = mem_id
+                except Exception as e:
+                    result_details[f"warning_{label}"] = (
+                        f"Could not expire {label} memory: {e}"
+                    )
 
         elif action == "remove_both":
             for mem_id, label in [(old_id, "old"), (new_id, "new")]:

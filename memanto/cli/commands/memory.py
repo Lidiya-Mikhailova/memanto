@@ -1211,11 +1211,16 @@ def conflicts(
             marker = " [green]<< recommended[/green]" if current_rec == rec_val else ""
             console.print(f"  [{BRIGHT}][{key}][/{BRIGHT}] {label}{marker}")
 
-        _opt("1", "Keep A (old memory)", "keep_old")
-        _opt("2", "Keep B (new memory)", "keep_new")
+        console.print("  [dim]Delete the loser (permanent):[/dim]")
+        _opt("1", "Keep A (old memory) — deletes B", "keep_old")
+        _opt("2", "Keep B (new memory) — deletes A", "keep_new")
         _opt("3", "Keep both", None)
         _opt("4", "Remove both", "remove_both")
-        _opt("5", "Manual: type replacement", "merge")
+        console.print("  [dim]Expire the loser (reversible):[/dim]")
+        _opt("5", "Expire A (old memory)", None)
+        _opt("6", "Expire B (new memory)", None)
+        _opt("7", "Expire both", None)
+        _opt("8", "Manual: type replacement", "merge")
         console.print("  [dim]\\[s] Skip  \\[q] Quit[/dim]\n")
 
         choice = typer.prompt("Choose", default="s").strip().lower()
@@ -1225,7 +1230,10 @@ def conflicts(
             "2": "keep_new",
             "3": "keep_both",
             "4": "remove_both",
-            "5": "manual",
+            "5": "expire_old",
+            "6": "expire_new",
+            "7": "expire_both",
+            "8": "manual",
         }
 
         if choice == "q":
@@ -1265,6 +1273,9 @@ def conflicts(
                 "keep_new": "[green]  OK Kept B (new). Old memory deleted.[/green]",
                 "keep_both": "[green]  OK Both memories kept.[/green]",
                 "remove_both": "[green]  OK Both memories removed.[/green]",
+                "expire_old": "[green]  OK Expired A (old). Restore it any time.[/green]",
+                "expire_new": "[green]  OK Expired B (new). Restore it any time.[/green]",
+                "expire_both": "[green]  OK Both memories expired.[/green]",
             }
             if action == "manual":
                 new_id = result.get("new_memory_id", "unknown")

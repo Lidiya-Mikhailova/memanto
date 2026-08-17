@@ -2545,6 +2545,11 @@
                     <select id="expSource" style="width:150px" onchange="renderExplorer()">
                         <option value="">All Sources</option>
                     </select>
+                    <select id="expStatus" style="width:150px" onchange="renderExplorer()">
+                        <option value="">Active &amp; Expired</option>
+                        <option value="active">Active only</option>
+                        <option value="expired">Expired only</option>
+                    </select>
                     <button class="btn btn-primary btn-sm" onclick="loadExplorer()">Search</button>
                 </div>
                 <div class="table-wrap" id="explorerTable">
@@ -3428,8 +3433,12 @@
         function renderExplorer() {
             const box = document.getElementById('explorerTable');
             const source = document.getElementById('expSource').value;
+            const status = document.getElementById('expStatus').value;
             let memories = S.explorerAll || [];
             if (source) memories = memories.filter(m => m.source === source);
+            // Records written before the lifecycle field carry no status and
+            // count as active, matching the server-side filter.
+            if (status) memories = memories.filter(m => (m.status || 'active') === status);
             S.memories = memories;
             if (!S.memories.length) { box.innerHTML = '<p style="color:var(--text-dim);padding:20px">No memories found</p>'; return; }
             box.innerHTML = buildMemoryTable(S.memories, true);
@@ -3458,8 +3467,16 @@
             let html = `<table><thead><tr><th>Title</th><th>Type</th><th>Source</th><th>Confidence</th><th>Status</th><th>Provenance</th><th>Created</th><th>Tags</th></tr></thead><tbody>`;
             mems.forEach((m) => {
                 const tags = Array.isArray(m.tags) ? m.tags.filter(t => t).join(', ') : (m.tags || '');
-                const statusBadge = m.status === 'active' ? '<span class="badge badge-success">active</span>' :
-                    `<span class="badge badge-info">${escHtml(m.status || '—')}</span>`;
+                // Expired memories keep their content; the badge carries when
+                // and why so the reason is visible without opening the row.
+                let statusBadge;
+                if (m.status === 'expired') {
+                    const why = [m.expired_by, m.expired_at ? fmtDate(m.expired_at) : null]
+                        .filter(Boolean).join(' · ');
+                    statusBadge = `<span class="badge badge-warning" title="${attrEsc(why || 'expired')}">expired</span>`;
+                } else {
+                    statusBadge = '<span class="badge badge-success">active</span>';
+                }
                 const provBadge = m.provenance ? `<span class="badge badge-accent">${escHtml(m.provenance)}</span>` : '—';
                 const mJson = attrEsc(JSON.stringify(m));
                 html += `<tr class="${expandable ? 'expandable' : ''}" ${expandable ? 'onclick="toggleRow(this)"' : ''}>
@@ -4482,12 +4499,31 @@
 
             memories.append(oldMem, newMem);
 
+            // Two rows: expiring is reversible and listed first, deleting is
+            // permanent and kept visually separate so the destructive choice
+            // is never the accidental one.
+            const expireActions = document.createElement('div');
+            expireActions.className = 'conflict-actions';
+            const expireLabel = document.createElement('div');
+            expireLabel.textContent = 'Expire (reversible)';
+            expireLabel.style.cssText = 'width:100%;font-size:12px;color:var(--text-secondary);margin-bottom:4px';
+            expireActions.append(
+                expireLabel,
+                conflictActionBtn('Expire Old', 'btn-secondary', () => resolveConflict(cid, rawAgentId, rawDate, 'expire_old')),
+                conflictActionBtn('Expire New', 'btn-secondary', () => resolveConflict(cid, rawAgentId, rawDate, 'expire_new')),
+                conflictActionBtn('Expire Both', 'btn-secondary', () => resolveConflict(cid, rawAgentId, rawDate, 'expire_both')),
+                conflictActionBtn('Keep Both', 'btn-secondary', () => resolveConflict(cid, rawAgentId, rawDate, 'keep_both')),
+            );
+
             const actions = document.createElement('div');
             actions.className = 'conflict-actions';
+            const deleteLabel = document.createElement('div');
+            deleteLabel.textContent = 'Delete (permanent)';
+            deleteLabel.style.cssText = 'width:100%;font-size:12px;color:var(--text-secondary);margin-bottom:4px';
             actions.append(
+                deleteLabel,
                 conflictActionBtn('Keep Old', 'btn-secondary', () => resolveConflict(cid, rawAgentId, rawDate, 'keep_old')),
                 conflictActionBtn('Keep New', 'btn-primary', () => resolveConflict(cid, rawAgentId, rawDate, 'keep_new')),
-                conflictActionBtn('Keep Both', 'btn-secondary', () => resolveConflict(cid, rawAgentId, rawDate, 'keep_both')),
                 conflictActionBtn('Remove Both', 'btn-danger', () => resolveConflict(cid, rawAgentId, rawDate, 'remove_both')),
                 conflictActionBtn('Manual', 'btn-secondary', () => showManualResolve(cid)),
             );
@@ -4515,7 +4551,7 @@
             });
             manual.append(formGroup, submitBtn);
 
-            card.append(header, expl, memories, actions, manual);
+            card.append(header, expl, memories, expireActions, actions, manual);
             return card;
         }
 

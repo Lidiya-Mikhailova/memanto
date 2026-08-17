@@ -138,13 +138,22 @@ class ConflictResolveRequest(BaseModel):
     """Request body for resolving a conflict"""
 
     conflict_index: int = Field(..., ge=0, description="Conflict index to resolve")
-    action: Literal["keep_old", "keep_new", "keep_both", "remove_both", "manual"] = (
-        Field(
-            ...,
-            description=(
-                "Resolution action: keep_old, keep_new, keep_both, remove_both, manual"
-            ),
-        )
+    action: Literal[
+        "keep_old",
+        "keep_new",
+        "keep_both",
+        "remove_both",
+        "expire_old",
+        "expire_new",
+        "expire_both",
+        "manual",
+    ] = Field(
+        ...,
+        description=(
+            "Resolution action. The keep_*/remove_both/manual actions delete the "
+            "losing memory permanently; the expire_* actions retire it "
+            "reversibly instead, keeping its content and audit trail."
+        ),
     )
     date: str | None = Field(
         None, description="Conflict report date (YYYY-MM-DD). Defaults to today."

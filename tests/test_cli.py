@@ -1306,6 +1306,51 @@ class TestMEMANTOCLI:
 
         assert _deleted_ids(mock_write) == ["A_old"]
 
+    @pytest.mark.parametrize(
+        "action,expected",
+        [
+            ("expire_old", ["A_old"]),
+            ("expire_new", ["A_new"]),
+            ("expire_both", ["A_old", "A_new"]),
+        ],
+    )
+    def test_expire_actions_retire_without_deleting(
+        self, tmp_path, monkeypatch, action, expected
+    ):
+        """The expire_* actions stamp the losing memory instead of deleting it."""
+        agent_id, date = "agent-1", "2026-07-01"
+        _write_conflict_report(tmp_path, agent_id, date, [_conflict("A")])
+        client, mock_write = _make_direct_client(tmp_path, monkeypatch)
+
+        client.resolve_conflict(agent_id, date, conflict_index=0, action=action)
+
+        expired = [call.args[0] for call in mock_write.set_lifecycle.call_args_list]
+        assert expired == expected
+        assert _deleted_ids(mock_write) == [], "expiring must not delete"
+
+        for call in mock_write.set_lifecycle.call_args_list:
+            assert call.kwargs["expired"] is True
+            assert call.kwargs["reason"] == "conflict-resolution"
+
+    def test_expire_action_marks_the_conflict_resolved(self, tmp_path, monkeypatch):
+        """An expiry resolves the conflict just like a delete does."""
+        agent_id, date = "agent-1", "2026-07-01"
+        _write_conflict_report(tmp_path, agent_id, date, [_conflict("A")])
+        client, _ = _make_direct_client(tmp_path, monkeypatch)
+
+        client.resolve_conflict(agent_id, date, conflict_index=0, action="expire_old")
+
+        assert client.list_conflicts(agent_id=agent_id, date=date) == []
+
+    def test_unknown_action_is_rejected(self, tmp_path, monkeypatch):
+        """A typo'd action must not silently do nothing."""
+        agent_id, date = "agent-1", "2026-07-01"
+        _write_conflict_report(tmp_path, agent_id, date, [_conflict("A")])
+        client, _ = _make_direct_client(tmp_path, monkeypatch)
+
+        with pytest.raises(ValueError, match="Invalid action"):
+            client.resolve_conflict(agent_id, date, conflict_index=0, action="expire")
+
     def test_memory_export(self, mock_all_clients):
         """Test 'memanto memory export'"""
         mock_all_clients.export_memory_md.return_value = {
