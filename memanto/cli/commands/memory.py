@@ -29,6 +29,7 @@ from memanto.cli.commands._shared import (
     console,
     format_local_time,
     get_client,
+    memory_app,
     parse_relative_time,
 )
 
@@ -364,6 +365,87 @@ def edit(
         _error(f"Failed to update memory: {e}")
 
 
+@memory_app.command("expire")
+def memory_expire(
+    memory_id: str = typer.Argument(..., help="Memory ID to expire"),
+    reason: str = typer.Option(
+        "manual",
+        "--reason",
+        "-r",
+        help="Why it expired, stamped as expired_by (default 'manual')",
+    ),
+):
+    """Expire a memory without deleting it.
+
+    The memory keeps its content and still appears in recall, labelled
+    [EXPIRED]. Reverse it with 'memanto memory restore <id>'.
+
+    Examples:
+        memanto memory expire mem-123
+        memanto memory expire mem-123 --reason superseded-by-rewrite
+    """
+    start = time.perf_counter()
+    active_agent_id, active_session_token = config_manager.get_active_session()
+
+    if not active_agent_id or not active_session_token:
+        _error(
+            "No active agent.", hint="Run 'memanto agent activate <agent-id>' first."
+        )
+
+    client = get_client()
+
+    try:
+        with console.status(f"[{PRIMARY}]Expiring memory...", spinner="dots"):
+            result = client.expire_memory(
+                agent_id=active_agent_id, memory_id=memory_id, reason=reason
+            )
+        elapsed = time.perf_counter() - start
+
+        console.print(f"[{WARNING}]Memory expired.[/{WARNING}]")
+        console.print(f"[dim]Memory ID: {memory_id}[/dim]")
+        console.print(f"[dim]Reason: {result.get('expired_by', reason)}[/dim]")
+        console.print(
+            "[dim]Still recallable and labelled [EXPIRED]. "
+            f"Restore with 'memanto memory restore {memory_id}'.[/dim]"
+        )
+        console.print(f"[dim]Completed in {elapsed:.2f}s[/dim]")
+
+    except Exception as e:
+        _error(f"Failed to expire memory: {e}")
+
+
+@memory_app.command("restore")
+def memory_restore(
+    memory_id: str = typer.Argument(..., help="Memory ID to restore"),
+):
+    """Return an expired memory to the active state.
+
+    Examples:
+        memanto memory restore mem-123
+    """
+    start = time.perf_counter()
+    active_agent_id, active_session_token = config_manager.get_active_session()
+
+    if not active_agent_id or not active_session_token:
+        _error(
+            "No active agent.", hint="Run 'memanto agent activate <agent-id>' first."
+        )
+
+    client = get_client()
+
+    try:
+        with console.status(f"[{PRIMARY}]Restoring memory...", spinner="dots"):
+            client.restore_memory(agent_id=active_agent_id, memory_id=memory_id)
+        elapsed = time.perf_counter() - start
+
+        console.print(f"[{SUCCESS}]Memory restored to active.[/{SUCCESS}]")
+        console.print(f"[dim]Memory ID: {memory_id}[/dim]")
+        console.print(f"[dim]Completed in {elapsed:.2f}s[/dim]")
+
+    except Exception as e:
+        _error(f"Failed to restore memory: {e}")
+
+
 @app.command()
 def forget(
     memory_id: str = typer.Argument(..., help="Memory ID to delete"),
@@ -374,7 +456,11 @@ def forget(
         help="Delete without asking for confirmation",
     ),
 ):
-    """Delete a single memory from the active agent."""
+    """Permanently delete a single memory from the active agent.
+
+    This cannot be undone. To retire a memory reversibly, use
+    'memanto memory expire <id>' instead.
+    """
     start = time.perf_counter()
     active_agent_id, active_session_token = config_manager.get_active_session()
 
@@ -513,8 +599,16 @@ def recall(
         "--recent",
         help="Chronological query: return the most recently stored memories (newest first). No search query needed.",
     ),
+    active_only: bool = typer.Option(
+        False, "--active", help="Only active memories (exclude expired)"
+    ),
+    expired_only: bool = typer.Option(False, "--expired", help="Only expired memories"),
 ):
-    """Search and retrieve memories for the active agent with temporal query support."""
+    """Search and retrieve memories for the active agent with temporal query support.
+
+    By default both active and expired memories are returned, each clearly
+    labelled. Narrow with --active or --expired.
+    """
     start = time.perf_counter()
     active_agent_id, active_session_token = config_manager.get_active_session()
 
@@ -537,6 +631,21 @@ def recall(
         _error(
             "Cannot provide a search query with temporal flags.",
             hint="Temporal queries (--as-of, --changed-since, --recent) list memories directly. Remove the search query to continue.",
+        )
+
+    if active_only and expired_only:
+        _error(
+            "Cannot use --active and --expired together.",
+            hint="Omit both to see active and expired memories side by side.",
+        )
+    status = "active" if active_only else "expired" if expired_only else "all"
+
+    # Point-in-time recall reconstructs what was live at a past date, so a
+    # present-day lifecycle filter would contradict the question being asked.
+    if as_of and status != "all":
+        _error(
+            "Cannot combine --as-of with --active/--expired.",
+            hint="--as-of already returns exactly the memories that were active at that date.",
         )
 
     client = get_client()
@@ -608,6 +717,7 @@ def recall(
                     limit=limit,
                     type=type,
                     tags=tag_list,
+                    status=status,
                 )
                 temporal_mode = "recent"
             elif query:
@@ -620,6 +730,7 @@ def recall(
                     tags=tag_list,
                     min_similarity=min_similarity,
                     min_confidence=min_confidence,
+                    status=status,
                 )
             else:
                 _error(

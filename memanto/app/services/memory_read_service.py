@@ -510,6 +510,7 @@ class MemoryReadService:
         limit: int | None = 10,
         created_after: str | None = None,
         created_before: str | None = None,
+        status: str = "all",
     ) -> dict[str, Any]:
         """
         Retrieve the most recently stored memories, sorted by created_at descending.
@@ -521,6 +522,7 @@ class MemoryReadService:
             limit: Max results to return
             created_after: ISO timestamp - include only memories created at/after this time
             created_before: ISO timestamp - include only memories created at/before this time
+            status: Lifecycle filter - ``all`` (default), ``active`` or ``expired``
         """
         try:
             from memanto.app.utils.temporal_helpers import parse_iso_timestamp
@@ -529,7 +531,9 @@ class MemoryReadService:
             if not namespaces:
                 return {"results": [], "total_found": 0}
 
-            unique_memories = self._fetch_all_memories(namespaces, type=type, tags=tags)
+            unique_memories = self._fetch_all_memories(
+                namespaces, type=type, tags=tags, status=status
+            )
 
             if created_after or created_before:
                 unique_memories = self._apply_temporal_filter(
