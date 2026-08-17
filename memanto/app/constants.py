@@ -25,8 +25,6 @@ MemoryType = Literal[
 # bounds the label so it stays a valid `#source:<value>` filter token.
 SourceType = str
 
-# Status Types
-StatusType = Literal["active", "superseded", "deleted", "provisional"]
 
 # Provenance Types
 ProvenanceType = Literal[

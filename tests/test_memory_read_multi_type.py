@@ -21,7 +21,6 @@ def _memory(memory_id: str, memory_type: str, score: float) -> dict:
         "actor_id": "agent-1",
         "source": "user",
         "confidence": 0.9,
-        "status": "active",
         "created_at": "2026-07-20T00:00:00Z",
         "updated_at": "2026-07-20T00:00:00Z",
         "score": score,

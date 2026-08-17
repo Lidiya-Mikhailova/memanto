@@ -1682,7 +1682,6 @@ class TestMEMANTOAPI:
                     "created_at": f"2025-01-{i + 1:02d}T00:00:00Z",
                     "updated_at": f"2025-01-{i + 1:02d}T01:00:00Z",
                     "memory_type": "fact",
-                    "status": "active",
                 },
                 "text": f"[FACT] Memory {i}\n\ncontent {i}",
             }

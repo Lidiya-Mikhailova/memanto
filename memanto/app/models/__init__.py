@@ -16,7 +16,6 @@ from memanto.app.constants import (
     VALID_PROVENANCE_TYPES,
     MemoryType,
     SourceType,
-    StatusType,
 )
 from memanto.app.core import (
     BoundedSourceRef,
@@ -318,7 +317,6 @@ class MemoryResponse(BaseModel):
     source: SourceType
     source_ref: str | None
     confidence: float
-    status: StatusType
     tags: list[str]
     created_at: datetime
     updated_at: datetime | None
@@ -427,7 +425,6 @@ class MemoryItem(BaseModel):
     text: str = ""
     type: str | None = None
     confidence: float | None = None
-    status: str | None = None
     tags: list[str] = Field(default_factory=list)
     created_at: str | None = None
     updated_at: str | None = None

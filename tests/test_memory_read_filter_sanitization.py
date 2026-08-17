@@ -12,12 +12,11 @@ def test_build_filtered_query_accepts_safe_filters():
         query="deployment notes",
         type=["fact"],
         tags=["prod-db"],
-        status_filter=["active"],
         metadata_filters={"source": "cli.import"},
     )
 
     assert query == (
-        "deployment notes #memory_type:fact #prod-db #status:active #source:cli.import"
+        "deployment notes #memory_type:fact #prod-db #source:cli.import"
     )
 
 
@@ -26,7 +25,6 @@ def test_build_filtered_query_accepts_safe_filters():
     [
         {"type": ["fact #status:deleted"]},
         {"tags": ["prod #status:deleted"]},
-        {"status_filter": ["active #memory_type:error"]},
         {"metadata_filters": {"source": "cli #status:deleted"}},
         {"metadata_filters": {"source #status": "active"}},
     ],

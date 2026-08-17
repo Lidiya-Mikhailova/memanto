@@ -120,7 +120,6 @@ class MemoryReadService:
         type: list[str] | None = None,
         tags: list[str] | None = None,
         min_confidence: float | None = None,
-        status_filter: list[str] | None = None,
         limit: int = 10,
         offset: int = 0,
         min_similarity_score: float | None = None,
@@ -161,7 +160,6 @@ class MemoryReadService:
                     type=type_variant,
                     tags=tags,
                     min_confidence=min_confidence,
-                    status_filter=status_filter,
                     created_after=created_after,
                     created_before=created_before,
                     metadata_filters=metadata_filters,
@@ -683,7 +681,6 @@ class MemoryReadService:
         type: list[str] | None = None,
         tags: list[str] | None = None,
         min_confidence: float | None = None,
-        status_filter: list[str] | None = None,
         created_after: str | None = None,
         created_before: str | None = None,
         metadata_filters: dict[str, Any] | None = None,
@@ -691,7 +688,7 @@ class MemoryReadService:
         """
         Build enhanced query with Moorcheh's #key:value metadata filters
 
-        Example: "user authentication #memory_type:fact #status:active"
+        Example: "user authentication #memory_type:fact"
 
         Note: Temporal filters (created_after/created_before) are applied as post-processing
         since Moorcheh's metadata filters use string comparison
@@ -711,12 +708,6 @@ class MemoryReadService:
             for tag in tags:
                 tag = _validate_filter_token(tag, "tag")
                 filter_parts.append(f"#{tag}")
-
-        # Add status filters
-        if status_filter:
-            for status in status_filter:
-                status = _validate_filter_token(status, "status")
-                filter_parts.append(f"#status:{status}")
 
         # Numeric confidence is stored as a number in memory documents. Applying
         # it via Moorcheh keyword syntax would require exact categorical values
@@ -1026,7 +1017,6 @@ class MemoryReadService:
                 "memory_type", "memory_type"
             ),  # Flat field name after migration
             "confidence": get_field("confidence"),
-            "status": get_field("status"),
             "tags": tags,
             "created_at": _coerce_timestamp_str(get_field("created_at")),
             "updated_at": _coerce_timestamp_str(get_field("updated_at")),

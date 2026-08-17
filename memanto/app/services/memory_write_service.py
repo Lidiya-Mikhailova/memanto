@@ -115,7 +115,6 @@ class MemoryWriteService:
                 "action": validation_result.get("action", "store"),
                 "reason": validation_result.get("reason", "Stored successfully"),
                 "confidence": memory.confidence,
-                "memory_status": memory.status,
                 "type": memory.type,
             }
 
@@ -353,7 +352,6 @@ class MemoryWriteService:
                 source=source_val,
                 source_ref=updates.get("source_ref", metadata.get("source_ref")),
                 confidence=updates.get("confidence", metadata.get("confidence", 0.8)),
-                status=updates.get("status", metadata.get("status", "active")),
                 tags=updates.get("tags", metadata.get("tags", [])),
                 provenance=metadata.get("provenance") or "explicit_statement",
             )
