@@ -128,19 +128,19 @@ def policy_show(
     if result.get("is_empty"):
         console.print(
             "\n[yellow]No policy set — nothing will ever expire.[/yellow]\n"
-            "[dim]Start from a preset: 'memanto policy preset balanced'[/dim]"
+            "[dim]Start from a preset: 'memanto policy apply-preset balanced'[/dim]"
         )
         return
 
     _render_policy(result.get("policy") or {}, agent_id)
 
 
-@policy_app.command("presets")
-def policy_presets():
+@policy_app.command("list-preset")
+def policy_list_preset():
     """List the predefined policy bundles.
 
     Examples:
-        memanto policy presets
+        memanto policy list-preset
     """
     client = get_client()
 
@@ -168,11 +168,11 @@ def policy_presets():
 
     console.print()
     console.print(table)
-    console.print("\n[dim]Adopt one with: memanto policy preset <name>[/dim]")
+    console.print("\n[dim]Adopt one with: memanto policy apply-preset <name>[/dim]")
 
 
-@policy_app.command("preset")
-def policy_preset(
+@policy_app.command("apply-preset")
+def policy_apply_preset(
     name: str = typer.Argument(
         ..., help="Preset name (conservative/balanced/aggressive)"
     ),
@@ -183,14 +183,33 @@ def policy_preset(
 ):
     """Adopt a predefined policy bundle, replacing the current policy.
 
-    Nothing expires until you run 'memanto policy apply'.
+    Shows the preset in full first, then asks. Nothing expires until you run
+    'memanto policy apply'.
 
     Examples:
-        memanto policy preset balanced
-        memanto policy preset aggressive --agent my-agent
+        memanto policy apply-preset balanced
+        memanto policy apply-preset aggressive --agent my-agent
     """
     agent_id = _resolve_agent(agent_id)
     client = get_client()
+
+    # Show what the preset actually contains *before* asking, so the answer is
+    # an informed one rather than a blind yes.
+    try:
+        preview = client.get_policy_preset(name)
+    except ValueError as e:
+        _error(str(e))
+    except Exception as e:
+        _error(f"Failed to load preset: {e}")
+
+    console.print(
+        Panel.fit(
+            f"[{BOLD_PRIMARY}]Preset: {name}[/{BOLD_PRIMARY}]\n"
+            f"{preview.get('description', '')}",
+            border_style=PRIMARY,
+        )
+    )
+    _render_policy(preview.get("policy") or {}, agent_id)
 
     if not yes:
         console.print(
@@ -202,16 +221,15 @@ def policy_preset(
             raise typer.Exit(0)
 
     try:
-        result = client.apply_policy_preset(agent_id, name)
+        client.apply_policy_preset(agent_id, name)
     except ValueError as e:
         _error(str(e))
     except Exception as e:
         _error(f"Failed to adopt preset: {e}")
 
     console.print(f"\n[green]Adopted preset '{name}' for '{agent_id}'.[/green]")
-    _render_policy(result.get("policy") or {}, agent_id)
     console.print(
-        "\n[dim]Preview what this would expire: memanto policy apply --dry-run[/dim]"
+        "[dim]Preview what this would expire: memanto policy apply --dry-run[/dim]"
     )
 
 
@@ -221,44 +239,53 @@ def policy_apply(
         None, "--agent", "-a", help="Agent identifier (defaults to active agent)"
     ),
     dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show what would be expired without writing"
+        False, "--dry-run", help="Show what would be expired and stop"
     ),
     limit: int = typer.Option(
         20, "--limit", "-n", help="Max matched memories to list (default 20)"
     ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt"),
 ):
     """Sweep the agent's memories and expire everything the policy matches.
 
-    Run with --dry-run first to see exactly what would change.
+    Always shows the policy in force and exactly which memories match before
+    asking to proceed, so --dry-run is only needed when you want to stop there.
 
     Examples:
         memanto policy apply --dry-run
         memanto policy apply
+        memanto policy apply --yes
     """
     agent_id = _resolve_agent(agent_id)
     client = get_client()
 
-    mode = "Dry run" if dry_run else "Applying"
     console.print(
         Panel.fit(
             f"[{BOLD_PRIMARY}]Policy Sweep[/{BOLD_PRIMARY}]\n"
-            f"Agent: [bold]{agent_id}[/bold]  •  {mode}",
+            f"Agent: [bold]{agent_id}[/bold]",
             border_style=PRIMARY,
         )
     )
 
+    # Evaluate as a dry run first, always. Nothing is written until the user
+    # has seen the policy and the matched memories and said yes.
     with console.status(f"[{PRIMARY}]Evaluating policy...", spinner="dots"):
         try:
-            report = client.apply_policy(agent_id, dry_run=dry_run)
+            policy_result = client.get_policy(agent_id)
+            report = client.apply_policy(agent_id, dry_run=True)
         except Exception as e:
             _error(f"Policy sweep failed: {e}")
 
     if report.get("policy_is_empty"):
         console.print(
             "\n[yellow]No policy set — nothing will ever expire.[/yellow]\n"
-            "[dim]Start from a preset: 'memanto policy preset balanced'[/dim]"
+            "[dim]Start from a preset: 'memanto policy apply-preset balanced'[/dim]"
         )
         return
+
+    # The policy in force, so the matches below can be read against the rules
+    # that produced them.
+    _render_policy(policy_result.get("policy") or {}, agent_id)
 
     matched = report.get("matched", 0)
     scanned = report.get("scanned", 0)
@@ -290,7 +317,9 @@ def policy_apply(
 
     memories = report.get("memories") or []
     if memories:
-        detail = Table(show_header=True, header_style=BOLD_PRIMARY, title="Memories")
+        detail = Table(
+            show_header=True, header_style=BOLD_PRIMARY, title="Would be expired"
+        )
         detail.add_column("Title", style=BRIGHT)
         detail.add_column("Type", style="white")
         detail.add_column("Rule", style="white")
@@ -314,15 +343,32 @@ def policy_apply(
             f"[dim]{matched} of {scanned} memories would be expired.[/dim]"
         )
         console.print("[dim]Run without --dry-run to apply.[/dim]")
-    else:
+        return
+
+    if not yes:
         console.print(
-            f"\n[{SUCCESS}]Expired {report.get('expired', 0)} "
-            f"of {scanned} memories.[/{SUCCESS}]"
+            f"\n[{WARNING}]{matched} of {scanned} memories will be expired."
+            f"[/{WARNING}] [dim]Expiring is reversible — content is kept and "
+            f"'memanto memory restore <id>' undoes it.[/dim]"
         )
-        console.print(
-            "[dim]They remain recallable and labelled [EXPIRED]. "
-            "Restore one with 'memanto memory restore <id>'.[/dim]"
-        )
+        if not typer.confirm("Apply the policy?", default=False):
+            console.print("[dim]Cancelled — nothing was changed.[/dim]")
+            raise typer.Exit(0)
+
+    with console.status(f"[{PRIMARY}]Expiring memories...", spinner="dots"):
+        try:
+            report = client.apply_policy(agent_id, dry_run=False)
+        except Exception as e:
+            _error(f"Policy sweep failed: {e}")
+
+    console.print(
+        f"\n[{SUCCESS}]Expired {report.get('expired', 0)} "
+        f"of {report.get('scanned', scanned)} memories.[/{SUCCESS}]"
+    )
+    console.print(
+        "[dim]They remain recallable and labelled [EXPIRED]. "
+        "Restore one with 'memanto memory restore <id>'.[/dim]"
+    )
 
     errors = report.get("errors") or []
     if errors:

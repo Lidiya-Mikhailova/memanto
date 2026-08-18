@@ -546,3 +546,33 @@ class TestPolicyPersistence:
 
         with pytest.raises(MemoryError, match="Invalid policy"):
             service.load_policy("alpha")
+
+
+class TestPresetPreview:
+    """`get_policy_preset` backs the confirm-before-adopting flow, so it must
+    return the full policy without writing anything."""
+
+    def test_returns_full_policy_without_saving(self, tmp_path):
+        from memanto.app.services.policy_presets import PRESETS, load_preset
+
+        policy = load_preset("balanced")
+        detail = {
+            "name": "balanced",
+            "description": PRESETS["balanced"]["description"],
+            "policy": policy.model_dump(mode="json", exclude_none=True),
+        }
+
+        assert detail["description"]
+        assert detail["policy"]["retention"]["context"] == "7d"
+        assert [r["name"] for r in detail["policy"]["rules"]][0] == "pinned"
+        # exclude_none keeps unset match conditions out of the preview too.
+        assert "null" not in str(detail["policy"])
+        # Nothing was persisted.
+        assert list(tmp_path.iterdir()) == []
+
+    @pytest.mark.parametrize("name", sorted(PRESETS))
+    def test_every_preset_previews(self, name):
+        policy = load_preset(name)
+        dumped = policy.model_dump(mode="json", exclude_none=True)
+        assert dumped["version"] == 1
+        assert "purge_expired_after" in dumped

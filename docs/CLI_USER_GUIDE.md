@@ -471,11 +471,11 @@ what was active at that date, including memories that have expired since.
 Policies decide what expires. Nothing expires until a sweep runs — either
 `memanto policy apply` or the nightly `memanto schedule` job.
 
-#### `policy presets` / `policy preset` - Start From a Bundle
+#### `policy list-preset` / `policy apply-preset` - Start From a Bundle
 
 ```bash
-memanto policy presets            # list conservative / balanced / aggressive
-memanto policy preset balanced    # adopt one (replaces the current policy)
+memanto policy list-preset        # list conservative / balanced / aggressive
+memanto policy apply-preset balanced   # shows the preset in full, then asks
 ```
 
 #### `policy show` - Inspect the Current Policy
@@ -488,11 +488,13 @@ memanto policy show --agent my-agent
 #### `policy apply` - Run the Sweep
 
 ```bash
-memanto policy apply --dry-run    # what would expire, with per-rule counts
-memanto policy apply              # stamp them
+memanto policy apply --dry-run    # what would expire, then stop
+memanto policy apply              # same preview, then asks to confirm
+memanto policy apply --yes        # skip the confirmation
 ```
 
-Always dry-run first: a broad rule can expire a large slice of an estate.
+`apply` always shows the policy in force and every matching memory before
+asking, so `--dry-run` is only needed when you want to stop at the preview.
 
 #### `policy purge` - Hard Delete Long-Expired Memories
 

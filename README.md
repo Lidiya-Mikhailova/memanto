@@ -125,10 +125,10 @@ There is no lock-in because there is nothing to lock.
 Every memory is **active** until a policy retires it. Expiry is stamped, auditable, and reversible — the content survives, and the memory keeps showing up in recall marked `[EXPIRED]` with the reason it aged out.
 
 ```bash
-memanto policy presets              # conservative / balanced / aggressive
-memanto policy preset balanced      # adopt one, then edit to taste
+memanto policy list-preset          # conservative / balanced / aggressive
+memanto policy apply-preset balanced  # shows it in full, then asks
 memanto policy apply --dry-run      # exactly what would expire, per rule
-memanto policy apply                # stamp them
+memanto policy apply                # shows the policy + matches, then confirms
 ```
 
 Policies live in `~/.memanto/policies/<agent>.yaml` and have two halves — a per-type retention table for broad strokes, and named rules for everything sharper. The first matching rule wins, so a rule can also *pin* a memory that the table would otherwise expire:

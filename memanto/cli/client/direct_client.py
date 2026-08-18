@@ -1058,7 +1058,7 @@ class DirectClient:
         policy = self._get_policy_service().load_policy(agent_id)
         return {
             "agent_id": agent_id,
-            "policy": policy.model_dump(mode="json"),
+            "policy": policy.model_dump(mode="json", exclude_none=True),
             "is_empty": policy.is_empty(),
         }
 
@@ -1073,7 +1073,7 @@ class DirectClient:
         path = self._get_policy_service().save_policy(agent_id, parsed)
         return {
             "agent_id": agent_id,
-            "policy": parsed.model_dump(mode="json"),
+            "policy": parsed.model_dump(mode="json", exclude_none=True),
             "path": str(path),
         }
 
@@ -1082,6 +1082,21 @@ class DirectClient:
         from memanto.app.services.policy_presets import list_presets
 
         return list_presets()
+
+    def get_policy_preset(self, name: str) -> dict[str, Any]:
+        """Return one preset's full policy without adopting it.
+
+        Lets a caller show exactly what a preset contains before committing
+        to it, which is what makes an informed confirmation possible.
+        """
+        from memanto.app.services.policy_presets import PRESETS, load_preset
+
+        policy = load_preset(name)
+        return {
+            "name": name,
+            "description": PRESETS[name]["description"],
+            "policy": policy.model_dump(mode="json", exclude_none=True),
+        }
 
     def apply_policy_preset(self, agent_id: str, name: str) -> dict[str, Any]:
         """Adopt a predefined policy bundle as the agent's policy."""
@@ -1092,7 +1107,7 @@ class DirectClient:
         return {
             "agent_id": agent_id,
             "preset": name,
-            "policy": policy.model_dump(mode="json"),
+            "policy": policy.model_dump(mode="json", exclude_none=True),
         }
 
     def apply_policy(self, agent_id: str, dry_run: bool = False) -> dict[str, Any]:
@@ -1222,6 +1237,7 @@ class DirectClient:
         limit: int | None = None,
         type: list[str] | None = None,
         tags: list[str] | None = None,
+        status: str = "all",
     ) -> dict[str, Any]:
         """
         Differential retrieval: what changed since a given date?
@@ -1248,6 +1264,7 @@ class DirectClient:
             agent_id=agent_id,
             type=type,
             tags=tags,
+            status=status,
             limit=limit,
         )
 

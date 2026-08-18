@@ -1972,6 +1972,89 @@
         }
       }
     },
+    "/api/v2/agents/{agent_id}/policy/presets/{name}": {
+      "get": {
+        "tags": [
+          "Sessions & Agents",
+          "Memory Operations"
+        ],
+        "summary": "Get Policy Preset",
+        "description": "Return one preset's full policy without adopting it (Session-based).\n\nLets a caller preview exactly what a preset contains before committing,\nwhich is what makes an informed confirmation possible.\n\nRequires:\n- X-Session-Token: {session_token}",
+        "operationId": "get_policy_preset_api_v2_agents__agent_id__policy_presets__name__get",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "x-session-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          },
+          {
+            "name": "memanto_session_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Memanto Session Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/agents/{agent_id}/policy/preset": {
       "post": {
         "tags": [
@@ -4930,6 +5013,17 @@
             ],
             "title": "Tags",
             "description": "Tag filters"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "active",
+              "expired"
+            ],
+            "title": "Status",
+            "description": "Lifecycle filter: 'all' (default) returns active and expired memories together so callers can label them, 'active' or 'expired' narrows to one.",
+            "default": "all"
           }
         },
         "type": "object",

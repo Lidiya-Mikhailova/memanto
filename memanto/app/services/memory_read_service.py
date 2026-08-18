@@ -414,6 +414,7 @@ class MemoryReadService:
         type: list[str] | None = None,
         tags: list[str] | None = None,
         limit: int | None = 10,
+        status: str = "all",
     ) -> dict[str, Any]:
         """
         Differential retrieval: "What changed recently?"
@@ -436,7 +437,9 @@ class MemoryReadService:
             if not namespaces:
                 return {"results": [], "total_found": 0, "since_date": since_date}
 
-            all_memories = self._fetch_all_memories(namespaces, type=type, tags=tags)
+            all_memories = self._fetch_all_memories(
+                namespaces, type=type, tags=tags, status=status
+            )
 
             # Filter to only changed memories
             changed_memories = []

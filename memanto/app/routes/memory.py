@@ -45,7 +45,7 @@ from memanto.app.services.memory_policy_service import (
 )
 from memanto.app.services.memory_read_service import MemoryReadService
 from memanto.app.services.memory_write_service import MemoryWriteService
-from memanto.app.services.policy_presets import list_presets, load_preset
+from memanto.app.services.policy_presets import PRESETS, list_presets, load_preset
 from memanto.app.utils.errors import (
     AuthorizationError,
     MemoryError,
@@ -248,6 +248,7 @@ class RecallChangedSinceRequest(BaseModel):
     limit: int | None = Field(default=None, ge=1, description="Max results")
     type: list[str] | None = Field(default=None, description="Memory type filters")
     tags: list[str] | None = Field(default=None, description="Tag filters")
+    status: StatusFilter = Field(default="all", description=STATUS_FILTER_DESCRIPTION)
 
     @field_validator("type")
     @classmethod
@@ -1320,6 +1321,7 @@ async def recall_changed_since(
             agent_id=agent_id,
             type=request.type,
             tags=request.tags,
+            status=request.status,
             limit=limit,
         )
 
@@ -1499,7 +1501,7 @@ async def get_policy(
         policy = await asyncio.to_thread(service.load_policy, agent_id)
         return {
             "agent_id": agent_id,
-            "policy": policy.model_dump(mode="json"),
+            "policy": policy.model_dump(mode="json", exclude_none=True),
             "is_empty": policy.is_empty(),
         }
     except Exception as e:
@@ -1529,7 +1531,7 @@ async def set_policy(
         path = await asyncio.to_thread(service.save_policy, agent_id, policy)
         return {
             "agent_id": agent_id,
-            "policy": policy.model_dump(mode="json"),
+            "policy": policy.model_dump(mode="json", exclude_none=True),
             "path": str(path),
         }
     except Exception as e:
@@ -1549,6 +1551,35 @@ async def list_policy_presets(
     """
     enforce_session_scope(session, agent_id)
     return {"presets": list_presets()}
+
+
+@router.get("/{agent_id}/policy/presets/{name}")
+async def get_policy_preset(
+    agent_id: str,
+    name: str,
+    session: Session = Depends(get_current_session),
+):
+    """
+    Return one preset's full policy without adopting it (Session-based).
+
+    Lets a caller preview exactly what a preset contains before committing,
+    which is what makes an informed confirmation possible.
+
+    Requires:
+    - X-Session-Token: {session_token}
+    """
+    enforce_session_scope(session, agent_id)
+
+    try:
+        policy = load_preset(name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {
+        "name": name,
+        "description": PRESETS[name]["description"],
+        "policy": policy.model_dump(mode="json", exclude_none=True),
+    }
 
 
 @router.post("/{agent_id}/policy/preset")
@@ -1579,7 +1610,7 @@ async def apply_policy_preset(
         return {
             "agent_id": agent_id,
             "preset": request.name,
-            "policy": policy.model_dump(mode="json"),
+            "policy": policy.model_dump(mode="json", exclude_none=True),
         }
     except Exception as e:
         raise map_error_to_http_exception(e)
