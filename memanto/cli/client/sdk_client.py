@@ -35,7 +35,7 @@ from memanto.app.constants import (
 from memanto.app.utils.errors import (
     AgentNotFoundError,
     InvalidSessionTokenError,
-    MemoryError,
+    MemoryOperationError,
     SessionError,
     SessionExpiredError,
     SessionNotFoundError,
@@ -610,14 +610,14 @@ class SdkClient:
 
             # Extract per-memory IDs from the batch result
             if not isinstance(result, dict):
-                raise MemoryError(
+                raise MemoryOperationError(
                     message="Data corruption detected: Received malformed batch result from storage layer.",
                     details={"item_preview": str(result)[:100]},
                 )
 
             batch_results = result.get("results", [])
             if not isinstance(batch_results, list):
-                raise MemoryError(
+                raise MemoryOperationError(
                     message="Data corruption detected: Received malformed batch result array from storage layer.",
                     details={"item_preview": str(batch_results)[:100]},
                 )
@@ -627,7 +627,7 @@ class SdkClient:
                 if item_result is not None and (
                     not isinstance(item_result, dict) or not item_result
                 ):
-                    raise MemoryError(
+                    raise MemoryOperationError(
                         message="Data corruption detected: Received malformed batch result from storage layer.",
                         details={"item_preview": str(item_result)[:100]},
                     )

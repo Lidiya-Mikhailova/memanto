@@ -18,7 +18,7 @@ from memanto.app.clients.moorcheh import get_moorcheh_client
 from memanto.app.config import get_data_dir, settings
 from memanto.app.core import agent_namespace
 from memanto.app.services.session_service import get_session_service
-from memanto.app.utils.errors import MemoryError
+from memanto.app.utils.errors import MemoryOperationError
 from memanto.app.utils.temporal_helpers import (
     format_current_local_time,
     format_local_time,
@@ -64,7 +64,7 @@ def _truncate_embedding_query(
         # disallowed_special=() treats tokens like "<|endoftext|>" as ordinary
         # text. Session content is arbitrary user prose, and tiktoken's default
         # raises ValueError on those markers -- here that would escape before
-        # generate_summary's try/except turns failures into MemoryError.
+        # generate_summary's try/except turns failures into MemoryOperationError.
         token_ids = tokenizer.encode(text, disallowed_special=())
         if len(token_ids) <= token_budget:
             return text
@@ -173,7 +173,7 @@ Format the output as a Markdown report:
             result = client.answer.generate(**generate_kwargs)
             summary_text = result.get("answer", "Failed to generate summary.")
         except Exception as e:
-            raise MemoryError(f"AI summarization failed: {str(e)}")
+            raise MemoryOperationError(f"AI summarization failed: {str(e)}")
 
         if resolved_output is not None:
             resolved_output.parent.mkdir(parents=True, exist_ok=True)
@@ -215,7 +215,7 @@ Format the output as a Markdown report:
         validate_safe_id(agent_id, "agent_id")
         validate_safe_id(date, "date")
 
-        conflicts_dir = Path.home() / ".memanto" / "conflicts"
+        conflicts_dir = get_data_dir() / "conflicts"
         conflicts_dir.mkdir(parents=True, exist_ok=True)
         pattern = f"{agent_id}_{date}_*_summary.md"
         session_files = list(self.sessions_dir.glob(pattern))
@@ -295,7 +295,7 @@ Example response format:
             result = client.answer.generate(**generate_kwargs)
             conflict_text = result.get("answer", "[]")
         except Exception as e:
-            raise MemoryError(f"Conflict detection failed: {str(e)}")
+            raise MemoryOperationError(f"Conflict detection failed: {str(e)}")
 
         # Parse JSON from the AI response
         conflicts_data = []

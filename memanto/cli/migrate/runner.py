@@ -319,7 +319,7 @@ def run_migration(
     batches = list(chunked(rows, BATCH_LIMIT))
     summary.batches = len(batches)
 
-    from memanto.app.utils.errors import MemoryError
+    from memanto.app.utils.errors import MemoryOperationError
 
     for idx, batch in enumerate(batches, 1):
         if on_progress:
@@ -328,7 +328,7 @@ def run_migration(
             )
         try:
             result = client.batch_remember(agent_id=agent_id, memories=batch)
-        except MemoryError:
+        except MemoryOperationError:
             raise
         except Exception as exc:
             summary.failed += len(batch)
@@ -336,14 +336,14 @@ def run_migration(
             continue
 
         if not isinstance(result, dict):
-            raise MemoryError(
+            raise MemoryOperationError(
                 message="Data corruption detected: Received malformed batch response envelope during migration.",
                 details={"result_preview": str(result)[:100]},
             )
 
         batch_results = result.get("results")
         if not isinstance(batch_results, list):
-            raise MemoryError(
+            raise MemoryOperationError(
                 message="Data corruption detected: Received malformed batch result array during migration.",
                 details={"results_preview": str(batch_results)[:100]},
             )
@@ -356,7 +356,7 @@ def run_migration(
         # batch_remember reports per-item errors in results[]; surface all errors.
         for item in batch_results:
             if not isinstance(item, dict) or not item:
-                raise MemoryError(
+                raise MemoryOperationError(
                     message="Data corruption detected: Received malformed batch result from storage layer during migration.",
                     details={"item_preview": str(item)[:100]},
                 )

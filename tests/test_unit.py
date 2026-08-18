@@ -1082,7 +1082,7 @@ class TestMemoryWriteServiceUpdateIntegrity:
         self, upload_result, expected_status
     ):
         from memanto.app.services.memory_write_service import MemoryWriteService
-        from memanto.app.utils.errors import MemoryError
+        from memanto.app.utils.errors import MemoryOperationError as MemoryError
 
         client = MagicMock()
         client.documents.upload.return_value = upload_result

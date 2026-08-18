@@ -15,7 +15,7 @@ from memanto.app.clients.backend import get_active_llm_model
 from memanto.app.config import settings
 from memanto.app.constants import REMOVED_TRUST_FIELDS, VALID_MEMORY_TYPES
 from memanto.app.core import agent_namespace
-from memanto.app.utils.errors import MemoryError
+from memanto.app.utils.errors import MemoryOperationError
 
 _FILTER_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
@@ -84,14 +84,14 @@ class MemoryReadService:
             )
 
             if not isinstance(result, dict):
-                raise MemoryError(
+                raise MemoryOperationError(
                     message="Data corruption detected: Received malformed get result from storage layer.",
                     details={"result_preview": str(result)[:100]},
                 )
 
             items: Any = result.get("items", [])
             if not isinstance(items, list):
-                raise MemoryError(
+                raise MemoryOperationError(
                     message="Data corruption detected: Received malformed get items array from storage layer.",
                     details={"items_preview": str(items)[:100]},
                 )
@@ -108,10 +108,10 @@ class MemoryReadService:
 
             return None
 
-        except MemoryError:
+        except MemoryOperationError:
             raise
         except Exception as e:
-            raise MemoryError(f"Failed to retrieve memory: {e}")
+            raise MemoryOperationError(f"Failed to retrieve memory: {e}")
 
     def search_memories(
         self,
@@ -226,7 +226,7 @@ class MemoryReadService:
                     try:
                         search_result = dict(search_result)
                     except (TypeError, ValueError):
-                        raise MemoryError(
+                        raise MemoryOperationError(
                             message=(
                                 "Data corruption detected: Received malformed "
                                 "search result from storage layer."
@@ -236,7 +236,7 @@ class MemoryReadService:
 
                 result_items = search_result.get("results", [])
                 if not isinstance(result_items, list):
-                    raise MemoryError(
+                    raise MemoryOperationError(
                         message=(
                             "Data corruption detected: Received malformed "
                             "search result array from storage layer."
@@ -307,10 +307,10 @@ class MemoryReadService:
                 "execution_time": execution_time,
             }
 
-        except MemoryError:
+        except MemoryOperationError:
             raise
         except Exception as e:
-            raise MemoryError(f"Failed to search memories: {e}")
+            raise MemoryOperationError(f"Failed to search memories: {e}")
 
     def search_as_of(
         self,
@@ -404,7 +404,7 @@ class MemoryReadService:
             }
 
         except Exception as e:
-            raise MemoryError(f"Failed to perform as-of query: {e}")
+            raise MemoryOperationError(f"Failed to perform as-of query: {e}")
 
     def search_changed_since(
         self,
@@ -499,7 +499,7 @@ class MemoryReadService:
             }
 
         except Exception as e:
-            raise MemoryError(f"Failed to search changed memories: {e}")
+            raise MemoryOperationError(f"Failed to search changed memories: {e}")
 
     def search_recent(
         self,
@@ -554,7 +554,7 @@ class MemoryReadService:
             return {"results": results, "total_found": len(results)}
 
         except Exception as e:
-            raise MemoryError(f"Failed to retrieve recent memories: {e}")
+            raise MemoryOperationError(f"Failed to retrieve recent memories: {e}")
 
     def _fetch_all_memories(
         self,
@@ -876,7 +876,7 @@ class MemoryReadService:
                 # Use first available namespace
                 namespaces = self.namespace_service.list_namespaces()
                 if not namespaces:
-                    raise MemoryError("No namespaces found")
+                    raise MemoryOperationError("No namespaces found")
                 namespace = namespaces[0]
 
             # Generate answer. Omit ai_model when on-prem state has no LLM
@@ -895,7 +895,7 @@ class MemoryReadService:
             }
 
         except Exception as e:
-            raise MemoryError(f"Failed to generate answer: {e}")
+            raise MemoryOperationError(f"Failed to generate answer: {e}")
 
     def _get_search_namespaces(self, agent_id: str | None = None) -> list[str]:
         """Get namespaces to search based on filters"""
@@ -943,7 +943,7 @@ class MemoryReadService:
         Format memory item for response.
         """
         if not isinstance(item, dict):
-            raise MemoryError(
+            raise MemoryOperationError(
                 message="Data corruption detected: Received malformed memory item from storage layer.",
                 details={"item_preview": str(item)[:100]},
             )
@@ -956,7 +956,7 @@ class MemoryReadService:
         # Check if metadata is in nested format (Moorcheh API spec)
         metadata = item.get("metadata", {})
         if not isinstance(metadata, dict):
-            raise MemoryError(
+            raise MemoryOperationError(
                 message="Data corruption detected: Received malformed metadata from storage layer.",
                 details={"item_preview": str(item)[:100]},
             )

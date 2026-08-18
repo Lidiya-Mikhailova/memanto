@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 from memanto.app.constants import REMOVED_TRUST_FIELDS
 from memanto.app.core import MemoryRecord, is_valid_source
 from memanto.app.services.memory_parsing_service import MemoryParsingService
-from memanto.app.utils.errors import MemoryError
+from memanto.app.utils.errors import MemoryOperationError
 from memanto.app.utils.ids import generate_memory_id
 from memanto.app.utils.temporal_helpers import as_utc_aware
 
@@ -108,7 +108,7 @@ class MemoryWriteService:
             }
 
         except Exception as e:
-            raise MemoryError(f"Failed to store memory: {e}")
+            raise MemoryOperationError(f"Failed to store memory: {e}")
 
     def batch_store_memories(
         self, memories: list[MemoryRecord], context: dict[str, Any] | None = None
@@ -125,10 +125,10 @@ class MemoryWriteService:
         """
         try:
             if not memories:
-                raise MemoryError("No memories provided for batch operation")
+                raise MemoryOperationError("No memories provided for batch operation")
 
             if len(memories) > 100:
-                raise MemoryError(
+                raise MemoryOperationError(
                     f"Batch size {len(memories)} exceeds Moorcheh's limit of 100 documents per request"
                 )
 
@@ -263,7 +263,7 @@ class MemoryWriteService:
             }
 
         except Exception as e:
-            raise MemoryError(f"Failed to batch store memories: {e}")
+            raise MemoryOperationError(f"Failed to batch store memories: {e}")
 
     def update_memory(
         self,
@@ -297,7 +297,7 @@ class MemoryWriteService:
             existing_memory_data = read_service.get_memory(memory_id, namespace)
 
             if not existing_memory_data:
-                raise MemoryError(
+                raise MemoryOperationError(
                     f"Memory {memory_id} not found in namespace {namespace}"
                 )
 
@@ -315,7 +315,7 @@ class MemoryWriteService:
             if not agent_id and namespace.startswith("memanto_agent_"):
                 agent_id = namespace.removeprefix("memanto_agent_")
             if not agent_id:
-                raise MemoryError(
+                raise MemoryOperationError(
                     f"Cannot determine agent_id for memory {memory_id} "
                     f"in namespace {namespace}"
                 )
@@ -405,11 +405,11 @@ class MemoryWriteService:
                     namespace_name=namespace, documents=[document]
                 )
             except Exception as e:
-                raise MemoryError(f"Upload failed. Error: {e}")
+                raise MemoryOperationError(f"Upload failed. Error: {e}")
 
             status = upload_result.get("status", "unknown")
             if str(status).lower() not in SUCCESSFUL_UPLOAD_STATUSES:
-                raise MemoryError(
+                raise MemoryOperationError(
                     f"Failed to upload updated memory {memory_id}: {status}"
                 )
 
@@ -423,10 +423,10 @@ class MemoryWriteService:
                 "updated_fields": list(updates.keys()),
             }
 
-        except MemoryError:
+        except MemoryOperationError:
             raise
         except Exception as e:
-            raise MemoryError(f"Failed to update memory: {e}")
+            raise MemoryOperationError(f"Failed to update memory: {e}")
 
     def delete_memory(self, memory_id: str, namespace: str) -> bool:
         """Delete memory by ID"""
@@ -441,7 +441,7 @@ class MemoryWriteService:
             return self._deletion_succeeded(result)
 
         except Exception as e:
-            raise MemoryError(f"Failed to delete memory: {e}")
+            raise MemoryOperationError(f"Failed to delete memory: {e}")
 
     @staticmethod
     def _deletion_succeeded(result: dict[str, Any]) -> bool:
