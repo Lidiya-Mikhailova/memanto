@@ -883,6 +883,7 @@ class TestMEMANTOAPI:
         assert stale_write.status_code in (401, 404)
         mock_moorcheh.documents.upload.assert_not_called()
 
+
     @pytest.mark.asyncio
     async def test_delete_agent_with_backup_delete(
         self, client, auth_headers, mock_moorcheh
