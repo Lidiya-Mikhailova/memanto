@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from moorcheh_sdk import MoorchehClient
 
+from memanto.app.constants import REMOVED_TRUST_FIELDS
 from memanto.app.core import MemoryRecord, is_valid_source
 from memanto.app.services.memory_parsing_service import MemoryParsingService
 from memanto.app.utils.errors import MemoryError
@@ -16,19 +17,6 @@ from memanto.app.utils.temporal_helpers import as_utc_aware
 
 SUCCESSFUL_UPLOAD_STATUSES = {"queued", "success", "ok"}
 
-# Trust fields removed from the active schema on 2026-06-29 (see
-# memanto/app/legacy/REMOVED.md). Old on-prem data_store.json records may still
-# carry them; they must never be copied forward on update or we resurrect dead
-# schema that no live read/write flow populates.
-_REMOVED_TRUST_FIELDS = frozenset(
-    {
-        "superseded_by",
-        "supersedes",
-        "validated_at",
-        "validation_count",
-        "contradiction_detected",
-    }
-)
 
 
 class MemoryWriteService:
@@ -398,8 +386,7 @@ class MemoryWriteService:
 
             document = cast(Document, updated_memory.to_moorcheh_document())
 
-            # Preserve extra metadata fields from the existing record (e.g. original_id
-            # in on-prem data_store.json) that aren't part of the MemoryRecord schema.
+            # Preserve extra metadata fields from the existing record not in MemoryRecord schema.
             existing_meta = existing_memory_data.get("metadata", existing_memory_data)
             if isinstance(existing_meta, dict):
                 # ``document`` is a TypedDict; cast to a plain dict to attach
@@ -409,7 +396,7 @@ class MemoryWriteService:
                     if (
                         key not in document
                         and key != "text"
-                        and key not in _REMOVED_TRUST_FIELDS
+                        and key not in REMOVED_TRUST_FIELDS
                     ):
                         extra_document[key] = existing_meta[key]
 

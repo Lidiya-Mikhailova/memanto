@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 from memanto.app.clients.backend import get_active_llm_model
 from memanto.app.config import settings
-from memanto.app.constants import VALID_MEMORY_TYPES
+from memanto.app.constants import REMOVED_TRUST_FIELDS, VALID_MEMORY_TYPES
 from memanto.app.core import agent_namespace
 from memanto.app.utils.errors import MemoryError
 
@@ -1042,6 +1042,14 @@ class MemoryReadService:
             # Provenance
             "provenance": provenance,
         }
+
+        # Preserve extra metadata keys (e.g. original_id) not in the schema.
+        # Exclude known keys, removed fields, and "memory_type" (duplicate of "type").
+        known_keys = set(formatted.keys()) | {"text", "memory_type"}
+        if isinstance(metadata, dict):
+            for key, value in metadata.items():
+                if key not in known_keys and key not in REMOVED_TRUST_FIELDS:
+                    formatted[key] = value
 
         return formatted
 
