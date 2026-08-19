@@ -27,7 +27,7 @@ def _make_summary_service(tmp_path, monkeypatch, session_content: str):
             return list(text.encode("utf-8"))
 
         @staticmethod
-        def decode(token_ids):
+        def decode(token_ids, **kwargs):
             return bytes(token_ids).decode("utf-8", errors="ignore")
 
     tokenizer = FakeTokenizer()

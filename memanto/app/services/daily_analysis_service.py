@@ -58,7 +58,7 @@ def _truncate_embedding_query(
     model: str | None,
     token_budget: int = _EMBEDDING_QUERY_TOKEN_BUDGET,
 ) -> str:
-    """Fit text within the embedding budget using a tokenizer or safe bound."""
+    """Fit text within the embedding budget using a bounded digest covering the complete text evenly."""
     tokenizer = _get_embedding_tokenizer(model)
     if tokenizer is not None:
         # disallowed_special=() treats tokens like "<|endoftext|>" as ordinary
@@ -68,7 +68,18 @@ def _truncate_embedding_query(
         token_ids = tokenizer.encode(text, disallowed_special=())
         if len(token_ids) <= token_budget:
             return text
-        return str(tokenizer.decode(token_ids[:token_budget]))
+
+        num_chunks = 10
+        chunk_budget = token_budget // num_chunks
+        stride = max(1, len(token_ids) // num_chunks)
+
+        digest_ids = []
+        for i in range(num_chunks):
+            start = i * stride
+            digest_ids.extend(token_ids[start : start + chunk_budget])
+
+        # tiktoken's decode gracefully handles partial BPE bytes
+        return str(tokenizer.decode(digest_ids, errors="ignore"))
 
     # Byte-level BPE and SentencePiece token counts cannot exceed the number
     # of UTF-8 bytes in their input. Limiting bytes is conservative for normal
@@ -76,7 +87,17 @@ def _truncate_embedding_query(
     encoded = text.encode("utf-8")
     if len(encoded) <= token_budget:
         return text
-    return encoded[:token_budget].decode("utf-8", errors="ignore")
+
+    num_chunks = 10
+    chunk_budget = token_budget // num_chunks
+    stride = max(1, len(encoded) // num_chunks)
+
+    digest_bytes = bytearray()
+    for i in range(num_chunks):
+        start = i * stride
+        digest_bytes.extend(encoded[start : start + chunk_budget])
+
+    return digest_bytes.decode("utf-8", errors="ignore")
 
 
 class DailyAnalysisService:
@@ -215,8 +236,9 @@ Format the output as a Markdown report:
         validate_safe_id(agent_id, "agent_id")
         validate_safe_id(date, "date")
 
-        conflicts_dir = get_data_dir() / "conflicts"
-        conflicts_dir.mkdir(parents=True, exist_ok=True)
+        from memanto.app.config import get_conflicts_dir
+
+        conflicts_dir = get_conflicts_dir()
         pattern = f"{agent_id}_{date}_*_summary.md"
         session_files = list(self.sessions_dir.glob(pattern))
 
