@@ -111,7 +111,7 @@ class AgentService:
                 ):
                     print(f"[OK] Namespace already exists in Moorcheh: {namespace}")
                 else:
-                    raise Exception(
+                    raise NamespaceError(
                         f"Failed to create namespace '{namespace}' in Moorcheh: {exc}"
                     )
 

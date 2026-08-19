@@ -93,11 +93,11 @@ def _bundle_lock_root(path: Path) -> Path:
     if path.suffix.lower() != ".md":
         return path
 
-    # A Memanto entry lives at ``<bundle>/memories/<type>/<entry>.md``.
+    # A Memanto entry lives at ``<bundle>/<section>/<entry>.md`` or deeper.
     # Resolve this lexically so the same bundle lock is selected even while
     # the exporter has temporarily moved the bundle directory aside.
     for parent in path.parents:
-        if parent.name == "memories":
+        if parent.name in ("memories", "daily-summaries", "sessions", "metrics"):
             return parent.parent
 
     # Root-level documents belong to their containing bundle. For a standalone

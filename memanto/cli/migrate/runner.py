@@ -348,10 +348,27 @@ def run_migration(
                 details={"results_preview": str(batch_results)[:100]},
             )
 
+        total_submitted = int(result.get("total_submitted") or 0)
         successful = int(result.get("successful") or 0)
-        failed = int(result.get("failed") or 0) + int(result.get("rejected") or 0)
+        failed = int(result.get("failed") or 0)
+        rejected = int(result.get("rejected") or 0)
+
+        if (
+            total_submitted < 0
+            or successful < 0
+            or failed < 0
+            or rejected < 0
+            or total_submitted != len(batch)
+            or len(batch_results) != len(batch)
+            or successful + failed + rejected != len(batch)
+        ):
+            raise MemoryOperationError(
+                message="Data corruption detected: Inconsistent batch counters during migration.",
+                details={"result_preview": str(result)[:100]},
+            )
+
         summary.imported += successful
-        summary.failed += failed
+        summary.failed += failed + rejected
 
         # batch_remember reports per-item errors in results[]; surface all errors.
         for item in batch_results:

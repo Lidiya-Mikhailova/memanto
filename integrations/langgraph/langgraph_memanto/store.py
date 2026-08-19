@@ -425,6 +425,8 @@ class MemantoStore(BaseStore):
             if not isinstance(agent, dict):
                 continue
             agent_id = agent.get("agent_id") or agent.get("id") or ""
+            if not isinstance(agent_id, str):
+                continue
             if agent_id.startswith(self._agent_prefix):
                 ns_str = agent_id[len(self._agent_prefix) :]
                 if ns_str == "default":

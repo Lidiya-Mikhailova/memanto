@@ -28,6 +28,10 @@ class MemoryOperationError(MemantoError):
     pass
 
 
+# Deprecated alias to maintain compatibility with external integrations like MCP.
+MemoryError = MemoryOperationError
+
+
 class NamespaceError(MemantoError):
     """Namespace operation error"""
 

@@ -34,8 +34,9 @@ def test_concurrent_summary_writes_create_one_header(monkeypatch, tmp_path):
 
     monkeypatch.setattr(Path, "exists", synchronize_initial_absence_check)
 
+    fixed_now = datetime.now(timezone.utc).replace(microsecond=0)
+
     def log_memory(index):
-        now = datetime.now(timezone.utc)
         record = MemoryRecord(
             type="fact",
             title=f"concurrent-{index}",
@@ -43,7 +44,7 @@ def test_concurrent_summary_writes_create_one_header(monkeypatch, tmp_path):
             agent_id="agent-race",
             actor_id="agent-race",
             source="agent",
-            created_at=now.replace(microsecond=0),
+            created_at=fixed_now,
         )
         service.log_memory_to_session_summary(
             agent_id="agent-race",
@@ -55,7 +56,7 @@ def test_concurrent_summary_writes_create_one_header(monkeypatch, tmp_path):
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         list(executor.map(log_memory, range(worker_count)))
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = fixed_now.strftime("%Y-%m-%d")
     summary_file = service.sessions_dir / f"agent-race_{today}_sess-race_summary.md"
     summary = summary_file.read_text(encoding="utf-8")
 

@@ -221,9 +221,7 @@ class TestMEMANTOAPI:
     async def test_remote_create_with_valid_credential_succeeds(self, auth_headers):
         """Remote peer with the correct management key can still manage agents."""
         transport = ASGITransport(app=app, client=("203.0.113.10", 54321))
-        async with AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as remote:
+        async with AsyncClient(transport=transport, base_url="http://test") as remote:
             response = await remote.post(
                 "/api/v2/agents",
                 headers=auth_headers,

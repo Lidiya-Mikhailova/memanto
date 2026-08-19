@@ -454,6 +454,10 @@ export class Memanto {
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+    const renewedToken = res.headers.get("X-Session-Token");
+    if (renewedToken) {
+      this.sessionToken = renewedToken;
+    }
     if (!res.ok) throw await asError(res, `${method} ${path} failed`);
     if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
@@ -504,6 +508,10 @@ export class Memanto {
       body: body as unknown as BodyInit,
       duplex: "half",
     } as RequestInit & { duplex: "half" });
+    const renewedToken = res.headers.get("X-Session-Token");
+    if (renewedToken) {
+      this.sessionToken = renewedToken;
+    }
     if (!res.ok) throw await asError(res, `POST ${path} failed`);
     return (await res.json()) as T;
   }
