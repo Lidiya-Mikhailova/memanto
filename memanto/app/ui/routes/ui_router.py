@@ -6,6 +6,7 @@ Serves the Web UI static files and provides UI-specific API endpoints.
 
 import asyncio
 import ipaddress
+import json
 import os
 import re
 import signal
@@ -1168,7 +1169,13 @@ def _migrate_load_or_export(
             raise HTTPException(
                 status_code=400, detail=f"Export file not found: {file_path}"
             )
-        return str(path), load_export(path)
+        try:
+            return str(path), load_export(path)
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Export file is not valid JSON: {file_path} ({exc})",
+            )
 
     if not api_key or not api_key.strip():
         raise HTTPException(
