@@ -790,18 +790,24 @@ class DirectClient:
                     details={"item_preview": str(result)[:100]},
                 )
 
-            batch_results = result.get("results", [])
-            if not isinstance(batch_results, list):
+            if "results" not in result:
+                raise MemoryOperationError(
+                    message="Data corruption detected: Missing 'results' in batch response from storage layer.",
+                    details={"item_preview": str(result)[:100]},
+                )
+
+            batch_results = result["results"]
+            if not isinstance(batch_results, list) or len(batch_results) != len(
+                memory_records
+            ):
                 raise MemoryOperationError(
                     message="Data corruption detected: Received malformed batch result array from storage layer.",
                     details={"item_preview": str(batch_results)[:100]},
                 )
 
             for i, mem in enumerate(memory_records):
-                item_result = batch_results[i] if i < len(batch_results) else None
-                if item_result is not None and (
-                    not isinstance(item_result, dict) or not item_result
-                ):
+                item_result = batch_results[i]
+                if not isinstance(item_result, dict) or not item_result:
                     raise MemoryOperationError(
                         message="Data corruption detected: Received malformed batch result from storage layer.",
                         details={"item_preview": str(item_result)[:100]},
@@ -1372,9 +1378,9 @@ class DirectClient:
         if not date:
             date = utc_date_str()
 
-        from memanto.app.config import get_conflicts_dir
+        from memanto.app.config import get_conflict_report_path
 
-        json_path = get_conflicts_dir() / f"{agent_id}_{date}_conflicts.json"
+        json_path = get_conflict_report_path(agent_id, date)
 
         if not json_path.exists():
             return []
@@ -1421,9 +1427,9 @@ class DirectClient:
                 f"Invalid action '{action}'. Must be one of: {', '.join(sorted(valid_actions))}"
             )
 
-        from memanto.app.config import get_conflicts_dir
+        from memanto.app.config import get_conflict_report_path
 
-        json_path = get_conflicts_dir() / f"{agent_id}_{date}_conflicts.json"
+        json_path = get_conflict_report_path(agent_id, date)
         if not json_path.exists():
             raise ValueError(f"No conflict report found for {agent_id} on {date}")
 

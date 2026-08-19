@@ -1019,9 +1019,9 @@ def conflicts(
 
     # Load full conflict list to get original indices
 
-    from memanto.app.config import get_conflicts_dir
+    from memanto.app.config import get_conflict_report_path
 
-    json_path = get_conflicts_dir() / f"{agent_id}_{date}_conflicts.json"
+    json_path = get_conflict_report_path(agent_id, date)
     with open(json_path, encoding="utf-8") as f:
         all_conflicts = json.load(f)
 

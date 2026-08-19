@@ -3,8 +3,6 @@ import { openAsBlob } from "node:fs";
 import { stat } from "node:fs/promises";
 import { basename } from "node:path";
 
-import { PassThrough } from "node:stream";
-
 import { ServerLifecycle, type ServerOptions } from "./lifecycle.js";
 
 export { ServerLifecycle } from "./lifecycle.js";

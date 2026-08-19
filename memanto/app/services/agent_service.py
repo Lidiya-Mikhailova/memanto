@@ -104,16 +104,14 @@ class AgentService:
                 message = str(exc).lower()
                 if "limit" in message or "tier" in message or "quota" in message:
                     raise NamespaceError(f"Moorcheh namespace limit reached: {exc}")
-                if (
-                    isinstance(exc, ConflictError)
-                    or ("namespace" in message and "already exists" in message)
-                    or "conflict" in message
+                if isinstance(exc, ConflictError) or (
+                    "namespace" in message and "already exists" in message
                 ):
                     print(f"[OK] Namespace already exists in Moorcheh: {namespace}")
                 else:
                     raise NamespaceError(
                         f"Failed to create namespace '{namespace}' in Moorcheh: {exc}"
-                    )
+                    ) from exc
 
             agent = AgentInfo(
                 agent_id=agent_create.agent_id,

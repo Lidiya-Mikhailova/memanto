@@ -71,11 +71,11 @@ def _truncate_embedding_query(
 
         num_chunks = 10
         chunk_budget = token_budget // num_chunks
-        stride = max(1, len(token_ids) // num_chunks)
+        max_start = max(0, len(token_ids) - chunk_budget)
 
         digest_ids = []
         for i in range(num_chunks):
-            start = i * stride
+            start = (i * max_start) // (num_chunks - 1) if num_chunks > 1 else 0
             digest_ids.extend(token_ids[start : start + chunk_budget])
 
         # tiktoken's decode gracefully handles partial BPE bytes
