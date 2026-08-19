@@ -551,7 +551,9 @@ async def list_conflict_scans(
         agent_id = aid
     _validate_agent_id(str(agent_id))
 
-    conflicts_dir = Path.home() / ".memanto" / "conflicts"
+    from memanto.app.config import get_conflicts_dir
+
+    conflicts_dir = get_conflicts_dir()
     scans: dict[str, dict] = {}
     if conflicts_dir.exists():
         suffix = "_conflicts.json"

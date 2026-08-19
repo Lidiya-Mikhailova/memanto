@@ -82,7 +82,7 @@ class MemoryParsingService:
                     4,
                 ),
                 (
-                    r"\b(?:dislike|dislikes|hate|hates|detest|detests|loathe|loathes|despise|despises|avoid using|not a fan of)\b",
+                    r"\b(?:dislike|dislikes|hate|hates|detest|detests|loathe|loathes|despise|despises|not a fan of)\b",
                     5,
                 ),
                 (

@@ -1135,9 +1135,9 @@ class TestMemoryWriteServiceUpdateIntegrity:
         raw_moorcheh_document = {
             "id": "mem_abc123",
             "text": "[FACT] Original Title\n\nOriginal content\n\nTags: tag1, tag2",
+            "original_id": "mem_abc123",  # Test top-level extraction
             "metadata": {
                 "id": "mem_abc123",
-                "original_id": "mem_abc123",
                 "memory_type": "fact",
                 "agent_id": "test-agent",
                 "actor_id": "user",

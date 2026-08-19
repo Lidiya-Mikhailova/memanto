@@ -193,3 +193,10 @@ def get_data_dir() -> Path:
         d.mkdir(parents=True, exist_ok=True)
         return d
     return base
+
+
+def get_conflicts_dir() -> Path:
+    """Return the shared directory for conflict reports."""
+    d = get_data_dir() / "conflicts"
+    d.mkdir(parents=True, exist_ok=True)
+    return d

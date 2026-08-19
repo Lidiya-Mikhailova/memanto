@@ -1047,9 +1047,14 @@ class MemoryReadService:
 
         # Preserve extra metadata keys (e.g. original_id) not in the schema.
         # Exclude known keys, removed fields, and "memory_type" (duplicate of "type").
-        known_keys = set(formatted.keys()) | {"text", "memory_type"}
+        known_keys = set(formatted.keys()) | {"text", "memory_type", "metadata"}
+
+        extra_sources = [item]
         if isinstance(metadata, dict):
-            for key, value in metadata.items():
+            extra_sources.append(metadata)
+
+        for source_dict in extra_sources:
+            for key, value in source_dict.items():
                 if key not in known_keys and key not in REMOVED_TRUST_FIELDS:
                     formatted[key] = value
 

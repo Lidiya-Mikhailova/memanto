@@ -60,6 +60,18 @@ def test_detect_negated_preferences_instead_of_instructions():
 def test_negative_imperative_remains_an_instruction():
     parser = MemoryParsingService()
 
+    cases = [
+        "Avoid using unpinned dependencies in production",
+        "Never deploy on Fridays",
+        "Don't use spaces for indentation",
+    ]
+
+    for content in cases:
+        memory = make_memory(content)
+        parser.parse_memory(memory)
+        assert memory.type == "instruction", content
+    parser = MemoryParsingService()
+
     memory = make_memory("Don't deploy unpinned dependencies in production")
 
     parser.parse_memory(memory)

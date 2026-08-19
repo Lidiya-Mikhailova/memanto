@@ -1247,9 +1247,9 @@ class SdkClient:
         if not date:
             date = utc_date_str()
 
-        json_path = (
-            Path.home() / ".memanto" / "conflicts" / f"{agent_id}_{date}_conflicts.json"
-        )
+        from memanto.app.config import get_conflicts_dir
+
+        json_path = get_conflicts_dir() / f"{agent_id}_{date}_conflicts.json"
 
         if not json_path.exists():
             return []
@@ -1295,9 +1295,9 @@ class SdkClient:
                 f"Invalid action '{action}'. Must be one of: {', '.join(sorted(valid_actions))}"
             )
 
-        json_path = (
-            Path.home() / ".memanto" / "conflicts" / f"{agent_id}_{date}_conflicts.json"
-        )
+        from memanto.app.config import get_conflicts_dir
+
+        json_path = get_conflicts_dir() / f"{agent_id}_{date}_conflicts.json"
         if not json_path.exists():
             raise ValueError(f"No conflict report found for {agent_id} on {date}")
 
