@@ -528,10 +528,11 @@ rules:                     # sharper; first match wins over the table
 purge_expired_after: never
 ```
 
-Durations are `30m`, `12h`, `7d`, `2w`, `1y`, or `never`. In the Web UI's
-Expiry Policy page the purge window is a slider over named stops (Never, 7 days,
-30 days, 90 days, 180 days, 1 year, 2 years); a value set here or by CLI that
-isn't one of those stops is shown as-is and left untouched. Match conditions
+Durations are `30m`, `12h`, `7d`, `2w`, `3mo`, `1y`, or `never` (a month is
+30 days). In the Web UI's Expiry Policy page the purge window is a number plus a
+unit — Days (1–365), Months (1–12), Years (1–10), or Never. A value set here or
+by CLI that the pair can't express (`12h`, say) is shown as-is and left
+untouched until you pick a different unit. Match conditions
 (`type`, `tags`, `source`, `provenance`, `confidence_below`) are ANDed; an empty
 `match` matches everything. Age is measured from `updated_at`, falling back to
 `created_at` — editing a memory resets its expiry clock.

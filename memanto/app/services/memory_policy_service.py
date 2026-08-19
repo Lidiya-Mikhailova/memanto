@@ -38,12 +38,16 @@ POLICY_VERSION = 1
 # "never" means "no expiry", represented as None once parsed.
 NEVER = "never"
 
-_DURATION_RE = re.compile(r"^(\d+)\s*([mhdwy])$", re.IGNORECASE)
+# ``mo`` must precede the single-letter class so "3mo" is not read as "3m".
+# A month is the conventional 30 days: calendar months have no fixed length,
+# and an expiry window does not need one.
+_DURATION_RE = re.compile(r"^(\d+)\s*(mo|[mhdwy])$", re.IGNORECASE)
 _DURATION_UNITS = {
     "m": 60,
     "h": 3600,
     "d": 86400,
     "w": 604800,
+    "mo": 2592000,
     "y": 31536000,
 }
 
@@ -70,7 +74,7 @@ def parse_duration(value: Any) -> int | None:
     if not match:
         raise ValueError(
             f"invalid duration '{value}': use a number followed by "
-            "m/h/d/w/y (e.g. '30d'), or 'never'"
+            "m/h/d/w/mo/y (e.g. '30d', '3mo'), or 'never'"
         )
     amount = int(match.group(1))
     if amount <= 0:

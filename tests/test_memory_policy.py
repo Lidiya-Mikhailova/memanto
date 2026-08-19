@@ -53,10 +53,20 @@ class TestParseDuration:
             ("never", None),
             (None, None),
             ("  3D  ", 259200),
+            ("1mo", 2592000),
+            ("3mo", 7776000),
+            ("12mo", 31104000),
+            ("  2MO ", 5184000),
         ],
     )
     def test_parses_supported_forms(self, value, expected):
         assert parse_duration(value) == expected
+
+    def test_months_are_not_confused_with_minutes(self):
+        """`3m` is three minutes; `3mo` is three months. The regex must not
+        read the leading `m` of `mo` as the minute unit."""
+        assert parse_duration("3m") == 180
+        assert parse_duration("3mo") == 7776000
 
     @pytest.mark.parametrize(
         "value", ["", "7", "d", "7x", "-3d", "0d", "seven days", "3.5d", True]

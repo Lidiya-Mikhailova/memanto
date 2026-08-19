@@ -4678,8 +4678,7 @@
         function renderPolicyPage() {
             const box = document.getElementById('policyContent');
             const p = policyDraft;
-            const purgeStops = purgeStopsFor(p.purge_expired_after);
-            const purgeIndex = Math.max(0, purgeStopIndex(purgeStops, p.purge_expired_after));
+            const purgeParts = purgeToParts(p.purge_expired_after);
 
             const presetOpts = (S.policyPresets || [])
                 .map(x => `<option value="${attrEsc(x.name)}">${escHtml(x.name)} — ${escHtml(x.description)}</option>`)
@@ -4747,13 +4746,19 @@
                     Permanently deletes memories that have already been <em>expired</em> for longer than this.
                     Irreversible, and unrelated to what the retention table expires.
                 </p>
-                <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-                    <input type="range" id="purgeSlider" min="0" max="${purgeStops.length - 1}" step="1" value="${purgeIndex}"
-                        style="flex:1;min-width:240px;max-width:420px;accent-color:var(--accent)"
-                        oninput="previewPurgeStop(this.value)" onchange="commitPurgeStop(this.value)">
-                    <span id="purgeSliderLabel" style="font-family:var(--font-mono);font-size:13px;min-width:110px;color:${purgeStops[purgeIndex].value === 'never' ? 'var(--text-dim)' : 'var(--warning)'}">${escHtml(purgeStops[purgeIndex].label)}</span>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                    <input type="number" id="purgeAmount" min="1" max="${purgeUnitDef(purgeParts).max}"
+                        step="1" value="${purgeParts.amount}"
+                        ${purgeParts.unit === 'never' || purgeParts.unit === 'custom' ? 'disabled' : ''}
+                        style="width:110px;font-family:var(--font-mono);font-size:13px;${purgeParts.unit === 'never' || purgeParts.unit === 'custom' ? 'opacity:.4' : ''}"
+                        onchange="commitPurge()">
+                    <select id="purgeUnit" style="width:150px" onchange="onPurgeUnitChange()">
+                        ${purgeUnitOptions(purgeParts).map(([k, label]) =>
+                            `<option value="${k}"${k === purgeParts.unit ? ' selected' : ''}>${escHtml(label)}</option>`).join('')}
+                    </select>
+                    <span id="purgeMaxHint" style="font-size:12px;color:var(--text-dim)">${escHtml(purgeMaxHint(purgeParts))}</span>
                 </div>
-                <p id="purgeSliderHint" style="font-size:12px;color:var(--text-dim);margin:10px 0 0">${escHtml(purgeHint(purgeStops[purgeIndex]))}</p>
+                <p id="purgeSliderHint" style="font-size:12px;color:${purgeParts.unit === 'never' ? 'var(--text-dim)' : 'var(--warning)'};margin:10px 0 0">${escHtml(purgeHint(purgeParts))}</p>
             </div>
 
             <div class="panel" style="margin-top:16px">
@@ -4773,76 +4778,92 @@
             else policyDraft.retention[type] = v;
         }
 
-        // Purge windows offered by the slider. Typing a duration meant guessing
-        // both the number and the unit, so the UI offers named stops instead —
-        // the policy file itself still accepts any duration.
-        const PURGE_STOPS = [
-            { value: 'never', label: 'Never' },
-            { value: '7d', label: '7 days' },
-            { value: '30d', label: '30 days' },
-            { value: '90d', label: '90 days' },
-            { value: '180d', label: '180 days' },
-            { value: '1y', label: '1 year' },
-            { value: '2y', label: '2 years' }
-        ];
+        // Purge window, entered as a number plus a unit. Each unit caps at the
+        // point where the next one reads better (366 days is "1 year"), so the
+        // pair can express any sensible window without ambiguity.
+        const PURGE_UNITS = {
+            never: { label: 'Never', suffix: null, max: 1 },
+            d: { label: 'Days', suffix: 'd', max: 365 },
+            mo: { label: 'Months', suffix: 'mo', max: 12 },
+            y: { label: 'Years', suffix: 'y', max: 10 }
+        };
 
-        // Order a duration so a value set outside the UI lands in the right slot.
-        function purgeDurationSeconds(v) {
-            const m = /^(\d+)\s*([mhdwy])$/i.exec(String(v || '').trim());
-            if (!m) return 0;
-            const unit = { m: 60, h: 3600, d: 86400, w: 604800, y: 31536000 }[m[2].toLowerCase()];
-            return parseInt(m[1], 10) * unit;
+        // Split a stored duration into {amount, unit}. Anything the pair cannot
+        // represent (a `12h` window set by hand or by CLI) keeps its own unit so
+        // the UI never silently rewrites a value set somewhere else.
+        function purgeToParts(value) {
+            const raw = (value || 'never').trim() || 'never';
+            if (raw === 'never') return { amount: 1, unit: 'never' };
+            const m = /^(\d+)\s*(mo|[mhdwy])$/i.exec(raw);
+            if (!m) return { amount: 1, unit: 'never' };
+            const amount = parseInt(m[1], 10);
+            const unit = m[2].toLowerCase();
+            if (PURGE_UNITS[unit]) return { amount, unit };
+            // A unit the pair cannot express (`12h`). Surfaced as its own
+            // option so it is visible and editable rather than crashing or
+            // being silently coerced into days.
+            return { amount, unit: 'custom', custom: raw };
         }
 
-        // A policy edited by CLI or by hand can hold a duration the slider does
-        // not offer (a 1m window used while testing, say). Splice it in as its
-        // own stop rather than snapping — the UI must never silently rewrite a
-        // value the user set somewhere else.
-        function purgeStopsFor(current) {
-            const val = (current || 'never').trim() || 'never';
-            // Match on duration, not spelling: a policy written as `365d` is the
-            // same window as the `1y` stop and must not read as "custom".
-            if (purgeStopIndex(PURGE_STOPS, val) !== -1) return PURGE_STOPS.slice();
-            const stops = PURGE_STOPS.slice();
-            const secs = purgeDurationSeconds(val);
-            const at = stops.findIndex(s => s.value !== 'never' && purgeDurationSeconds(s.value) > secs);
-            stops.splice(at === -1 ? stops.length : at, 0, { value: val, label: val + ' (custom)' });
-            return stops;
-        }
-
-        function purgeStopIndex(stops, current) {
-            const val = (current || 'never').trim() || 'never';
-            if (val === 'never') return stops.findIndex(s => s.value === 'never');
-            const secs = purgeDurationSeconds(val);
-            if (!secs) return stops.findIndex(s => s.value === val);
-            return stops.findIndex(s => s.value !== 'never' && purgeDurationSeconds(s.value) === secs);
-        }
-
-        function purgeHint(stop) {
-            return stop.value === 'never'
-                ? 'Purging is off. Expired memories are kept forever and stay restorable.'
-                : `Expired memories are permanently deleted ${stop.label.toLowerCase()} after they expire. This cannot be undone.`;
-        }
-
-        function previewPurgeStop(idx) {
-            const stops = purgeStopsFor(policyDraft.purge_expired_after);
-            const stop = stops[parseInt(idx, 10)];
-            if (!stop) return;
-            const label = document.getElementById('purgeSliderLabel');
-            const hint = document.getElementById('purgeSliderHint');
-            if (label) {
-                label.textContent = stop.label;
-                label.style.color = stop.value === 'never' ? 'var(--text-dim)' : 'var(--warning)';
+        // Unit definition for a parts object, including the synthetic entry for
+        // a value that came from outside this page.
+        function purgeUnitDef(parts) {
+            if (parts.unit === 'custom') {
+                return { label: parts.custom + ' (set elsewhere)', suffix: null, max: 1 };
             }
-            if (hint) hint.textContent = purgeHint(stop);
+            return PURGE_UNITS[parts.unit];
         }
 
-        function commitPurgeStop(idx) {
-            const stops = purgeStopsFor(policyDraft.purge_expired_after);
-            const stop = stops[parseInt(idx, 10)];
-            if (!stop) return;
-            policyDraft.purge_expired_after = stop.value;
-            previewPurgeStop(idx);
+        // Dropdown entries: the fixed units, plus the custom one when in play.
+        function purgeUnitOptions(parts) {
+            const opts = Object.entries(PURGE_UNITS).map(([k, u]) => [k, u.label]);
+            if (parts.unit === 'custom') opts.push(['custom', purgeUnitDef(parts).label]);
+            return opts;
+        }
+
+        function purgeMaxHint(parts) {
+            const u = purgeUnitDef(parts);
+            return u && u.suffix ? `1–${u.max}` : '';
+        }
+
+        function purgeHint(parts) {
+            if (parts.unit === 'never') {
+                return 'Purging is off. Expired memories are kept forever and stay restorable.';
+            }
+            if (parts.custom) {
+                return `Set to ${parts.custom} outside this page. Expired memories are permanently deleted after that. This cannot be undone.`;
+            }
+            const noun = PURGE_UNITS[parts.unit].label.toLowerCase().replace(/s$/, '');
+            const plural = parts.amount === 1 ? noun : noun + 's';
+            return `Expired memories are permanently deleted ${parts.amount} ${plural} after they expire. This cannot be undone.`;
+        }
+
+        // Switching units re-clamps: 365 days is valid, 365 months is not.
+        function onPurgeUnitChange() {
+            const unit = document.getElementById('purgeUnit').value;
+            // Re-selecting the "set elsewhere" entry is a no-op, not a rewrite.
+            if (unit === 'custom') return;
+            const amountEl = document.getElementById('purgeAmount');
+            const max = PURGE_UNITS[unit].max;
+            let amount = parseInt(amountEl.value, 10);
+            if (!Number.isFinite(amount) || amount < 1) amount = 1;
+            if (amount > max) amount = max;
+            policyDraft.purge_expired_after = unit === 'never' ? 'never' : `${amount}${PURGE_UNITS[unit].suffix}`;
+            renderPolicyPage();
+        }
+
+        function commitPurge() {
+            const unit = document.getElementById('purgeUnit').value;
+            if (unit === 'never') { policyDraft.purge_expired_after = 'never'; return; }
+            const amountEl = document.getElementById('purgeAmount');
+            const max = PURGE_UNITS[unit].max;
+            let amount = parseInt(amountEl.value, 10);
+            if (!Number.isFinite(amount) || amount < 1) amount = 1;
+            if (amount > max) amount = max;
+            amountEl.value = amount;
+            policyDraft.purge_expired_after = `${amount}${PURGE_UNITS[unit].suffix}`;
+            const hint = document.getElementById('purgeSliderHint');
+            if (hint) hint.textContent = purgeHint({ amount, unit });
         }
 
         function updateRule(i, field, value) {
