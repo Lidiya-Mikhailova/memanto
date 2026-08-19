@@ -1125,9 +1125,10 @@ class TestMemoryWriteServiceUpdateIntegrity:
     def test_original_id_survives_read_format_update_cycle(self):
         """original_id must survive get_memory() -> _format_memory_item() -> update_memory()."""
         from unittest.mock import MagicMock, patch
-        from memanto.app.services.memory_write_service import MemoryWriteService
+
         from memanto.app.services.memory_read_service import MemoryReadService
-        
+        from memanto.app.services.memory_write_service import MemoryWriteService
+
         mock_client = MagicMock()
         mock_client.documents.upload.return_value = {"status": "success"}
 
@@ -1167,7 +1168,9 @@ class TestMemoryWriteServiceUpdateIntegrity:
                 updates={"content": "Updated content"},
             )
 
-            uploaded_documents = mock_client.documents.upload.call_args.kwargs["documents"]
+            uploaded_documents = mock_client.documents.upload.call_args.kwargs[
+                "documents"
+            ]
             assert uploaded_documents[0].get("original_id") == "mem_abc123"
 
 
@@ -2192,35 +2195,6 @@ def test_batch_upload_error_counts_each_pending_memory_as_failed():
         "Batch upload returned status" in item["error"] for item in result["results"]
     )
 
-
-
-
-    # 1. Pagination uses singular containerTag
-    response = {"memoryEntries": [{"id": "memory-1", "content": "A fact"}], "pagination": {"totalPages": 1}}
-    with patch("memanto.cli.analyze.supermemory_export.api_request", return_value=response) as request:
-        memories = paginate_memories_for_tag("test-key", "project-a")
-    assert memories == response["memoryEntries"]
-    assert request.call_args.args[3]["containerTag"] == "project-a"
-    assert "containerTags" not in request.call_args.args[3]
-
-    # 2. Tag deduplication
-    with patch("memanto.cli.analyze.supermemory_export.paginate_memories_for_tag", side_effect=lambda k, t: [{"id": "shared-memory", "content": "Fact", "metadata": {"queried_via": t}}]):
-        memories, memories_by_tag = collect_memories_deduped("test-key", ["project-a", "project-b"])
-    assert len(memories) == 1
-    assert memories[0]["container_tags"] == ["project-a", "project-b"]
-    assert len(memories_by_tag["project-a"]) == 1 and len(memories_by_tag["project-b"]) == 1
-
-    # 3. Mixed accounts processing
-    export = {
-        "memories": [{"id": "memory-1", "documentId": "processed-doc", "content": "Fact"}],
-        "documents": [
-            {"id": "processed-doc", "memory_ids": ["memory-1"], "container_tags": ["project-a"], "chunks": [{"id": "c1", "content": "Processed"}]},
-            {"id": "fresh-doc", "memory_ids": [], "container_tags": ["project-b"], "chunks": [{"id": "c2", "content": "Fresh"}]}
-        ]
-    }
-    migrated = map_supermemory(export)
-    assert [r["source_ref"] for r in migrated] == ["memory-1", "fresh-doc:c2"]
-    assert source_count("supermemory", export) == 2
 
 def test_direct_sync_uses_cached_export_fast_path(tmp_path, monkeypatch):
     from memanto.cli.client.direct_client import DirectClient

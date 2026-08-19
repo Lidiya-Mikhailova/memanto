@@ -48,6 +48,8 @@ def atomic_write_text(path: Path, content: str) -> None:
                 tmp_path.unlink()
             except OSError:
                 pass
+
+
 def _lock_path(bundle_path: Path) -> Path:
     """Return the stable sibling lock file for a bundle path."""
     resolved = bundle_path.expanduser().resolve(strict=False)

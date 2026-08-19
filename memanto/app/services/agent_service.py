@@ -18,7 +18,11 @@ from memanto.app.config import get_data_dir
 from memanto.app.core import agent_namespace
 from memanto.app.models.session import AgentCreate, AgentInfo, AgentList
 from memanto.app.utils.atomic_write import atomic_write_text
-from memanto.app.utils.errors import AgentAlreadyExistsError, AgentNotFoundError, NamespaceError
+from memanto.app.utils.errors import (
+    AgentAlreadyExistsError,
+    AgentNotFoundError,
+    NamespaceError,
+)
 from memanto.app.utils.temporal_helpers import as_utc_aware
 from memanto.app.utils.validation import validate_safe_id
 
@@ -100,9 +104,11 @@ class AgentService:
                 message = str(exc).lower()
                 if "limit" in message or "tier" in message or "quota" in message:
                     raise NamespaceError(f"Moorcheh namespace limit reached: {exc}")
-                if isinstance(exc, ConflictError) or (
-                    "namespace" in message and "already exists" in message
-                ) or "conflict" in message:
+                if (
+                    isinstance(exc, ConflictError)
+                    or ("namespace" in message and "already exists" in message)
+                    or "conflict" in message
+                ):
                     print(f"[OK] Namespace already exists in Moorcheh: {namespace}")
                 else:
                     raise Exception(

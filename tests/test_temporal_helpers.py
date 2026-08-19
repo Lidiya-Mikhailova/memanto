@@ -119,14 +119,14 @@ def test_parse_as_of_timestamp_preserves_explicit_time():
 def test_parse_relative_time_natural_language_additions():
     """Verify natural units, synonyms, word-numbers, whitespace, and overflow guards."""
     from datetime import datetime, timedelta
-    
+
     # Overflow guards
     assert parse_relative_time("last 9999999999 days") is None
     assert parse_relative_time("last 9999999999 hours") is None
 
     # Natural language assertions
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    
+
     cases = [
         ("last week", 7, "days"),
         ("past week", 7, "days"),
@@ -135,9 +135,9 @@ def test_parse_relative_time_natural_language_additions():
         ("past 7 days", 7, "days"),
         ("last seven days", 7, "days"),
         ("last  7  days", 7, "days"),
-        ("last 48 hours", 48, "hours")
+        ("last 48 hours", 48, "hours"),
     ]
-    
+
     for time_str, expected_num, unit in cases:
         res = parse_relative_time(time_str)
         assert res is not None, f"Expected timestamp for {time_str!r}, got None"

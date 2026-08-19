@@ -71,7 +71,9 @@ def test_busy_day_conflict_report_keeps_embedded_query_within_context_window(
         <= module._EMBEDDING_QUERY_TOKEN_BUDGET
     )
     assert long_content in call_kwargs["header_prompt"]
-    assert "You MUST respond with ONLY a valid JSON array" in call_kwargs["footer_prompt"]
+    assert (
+        "You MUST respond with ONLY a valid JSON array" in call_kwargs["footer_prompt"]
+    )
 
 
 def test_busy_day_summary_keeps_embedded_query_within_context_window(

@@ -749,9 +749,6 @@ class TestMEMANTOCLI:
         assert client._cached_session is new_session
         session_service.validate_session.assert_called_once_with("new-token")
 
-
-
-
     def test_upload_file_sdk_accepts_snake_case_file_size(
         self, tmp_path, mock_all_clients
     ):

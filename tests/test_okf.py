@@ -168,6 +168,7 @@ def test_okf_import_ignores_invalid_temporal_extensions(tmp_path):
     assert row["expires_at"] is None
     assert row["ttl_seconds"] is None
 
+
 def test_okf_invalid_provenance_falls_back_to_imported():
     """Foreign or malformed provenance must not reach batch validation."""
     export = {
