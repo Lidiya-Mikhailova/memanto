@@ -4678,6 +4678,8 @@
         function renderPolicyPage() {
             const box = document.getElementById('policyContent');
             const p = policyDraft;
+            const purgeStops = purgeStopsFor(p.purge_expired_after);
+            const purgeIndex = Math.max(0, purgeStopIndex(purgeStops, p.purge_expired_after));
 
             const presetOpts = (S.policyPresets || [])
                 .map(x => `<option value="${attrEsc(x.name)}">${escHtml(x.name)} — ${escHtml(x.description)}</option>`)
@@ -4741,11 +4743,17 @@
 
             <div class="panel" style="margin-top:16px">
                 <h3 style="margin:0 0 4px">Purge</h3>
-                <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px">
+                <p style="font-size:12px;color:var(--text-dim);margin:0 0 14px">
                     Permanently deletes memories that have already been <em>expired</em> for longer than this.
-                    Irreversible, and unrelated to what the retention table expires. <code>never</code> disables it.
+                    Irreversible, and unrelated to what the retention table expires.
                 </p>
-                <input value="${attrEsc(p.purge_expired_after)}" placeholder="never" style="width:140px;font-family:var(--font-mono);font-size:12px" onchange="updatePurgeWindow(this.value)">
+                <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+                    <input type="range" id="purgeSlider" min="0" max="${purgeStops.length - 1}" step="1" value="${purgeIndex}"
+                        style="flex:1;min-width:240px;max-width:420px;accent-color:var(--accent)"
+                        oninput="previewPurgeStop(this.value)" onchange="commitPurgeStop(this.value)">
+                    <span id="purgeSliderLabel" style="font-family:var(--font-mono);font-size:13px;min-width:110px;color:${purgeStops[purgeIndex].value === 'never' ? 'var(--text-dim)' : 'var(--warning)'}">${escHtml(purgeStops[purgeIndex].label)}</span>
+                </div>
+                <p id="purgeSliderHint" style="font-size:12px;color:var(--text-dim);margin:10px 0 0">${escHtml(purgeHint(purgeStops[purgeIndex]))}</p>
             </div>
 
             <div class="panel" style="margin-top:16px">
@@ -4765,8 +4773,76 @@
             else policyDraft.retention[type] = v;
         }
 
-        function updatePurgeWindow(value) {
-            policyDraft.purge_expired_after = (value || '').trim() || 'never';
+        // Purge windows offered by the slider. Typing a duration meant guessing
+        // both the number and the unit, so the UI offers named stops instead —
+        // the policy file itself still accepts any duration.
+        const PURGE_STOPS = [
+            { value: 'never', label: 'Never' },
+            { value: '7d', label: '7 days' },
+            { value: '30d', label: '30 days' },
+            { value: '90d', label: '90 days' },
+            { value: '180d', label: '180 days' },
+            { value: '1y', label: '1 year' },
+            { value: '2y', label: '2 years' }
+        ];
+
+        // Order a duration so a value set outside the UI lands in the right slot.
+        function purgeDurationSeconds(v) {
+            const m = /^(\d+)\s*([mhdwy])$/i.exec(String(v || '').trim());
+            if (!m) return 0;
+            const unit = { m: 60, h: 3600, d: 86400, w: 604800, y: 31536000 }[m[2].toLowerCase()];
+            return parseInt(m[1], 10) * unit;
+        }
+
+        // A policy edited by CLI or by hand can hold a duration the slider does
+        // not offer (a 1m window used while testing, say). Splice it in as its
+        // own stop rather than snapping — the UI must never silently rewrite a
+        // value the user set somewhere else.
+        function purgeStopsFor(current) {
+            const val = (current || 'never').trim() || 'never';
+            // Match on duration, not spelling: a policy written as `365d` is the
+            // same window as the `1y` stop and must not read as "custom".
+            if (purgeStopIndex(PURGE_STOPS, val) !== -1) return PURGE_STOPS.slice();
+            const stops = PURGE_STOPS.slice();
+            const secs = purgeDurationSeconds(val);
+            const at = stops.findIndex(s => s.value !== 'never' && purgeDurationSeconds(s.value) > secs);
+            stops.splice(at === -1 ? stops.length : at, 0, { value: val, label: val + ' (custom)' });
+            return stops;
+        }
+
+        function purgeStopIndex(stops, current) {
+            const val = (current || 'never').trim() || 'never';
+            if (val === 'never') return stops.findIndex(s => s.value === 'never');
+            const secs = purgeDurationSeconds(val);
+            if (!secs) return stops.findIndex(s => s.value === val);
+            return stops.findIndex(s => s.value !== 'never' && purgeDurationSeconds(s.value) === secs);
+        }
+
+        function purgeHint(stop) {
+            return stop.value === 'never'
+                ? 'Purging is off. Expired memories are kept forever and stay restorable.'
+                : `Expired memories are permanently deleted ${stop.label.toLowerCase()} after they expire. This cannot be undone.`;
+        }
+
+        function previewPurgeStop(idx) {
+            const stops = purgeStopsFor(policyDraft.purge_expired_after);
+            const stop = stops[parseInt(idx, 10)];
+            if (!stop) return;
+            const label = document.getElementById('purgeSliderLabel');
+            const hint = document.getElementById('purgeSliderHint');
+            if (label) {
+                label.textContent = stop.label;
+                label.style.color = stop.value === 'never' ? 'var(--text-dim)' : 'var(--warning)';
+            }
+            if (hint) hint.textContent = purgeHint(stop);
+        }
+
+        function commitPurgeStop(idx) {
+            const stops = purgeStopsFor(policyDraft.purge_expired_after);
+            const stop = stops[parseInt(idx, 10)];
+            if (!stop) return;
+            policyDraft.purge_expired_after = stop.value;
+            previewPurgeStop(idx);
         }
 
         function updateRule(i, field, value) {
