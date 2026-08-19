@@ -17,6 +17,35 @@ from memanto.app.utils.temporal_helpers import as_utc_aware
 
 SUCCESSFUL_UPLOAD_STATUSES = {"queued", "success", "ok"}
 
+# Fields owned by the current MemoryRecord/document schema. They must not be
+# copied from the old document after an update because an omitted optional field
+# (for example, tags=[] or source_ref=None) represents an intentional clear.
+_MEMORY_SCHEMA_FIELDS = frozenset(
+    {
+        "id",
+        "text",
+        "memory_type",
+        "type",
+        "title",
+        "content",
+        "agent_id",
+        "actor_id",
+        "source",
+        "source_ref",
+        "confidence",
+        "status",
+        "tags",
+        "provenance",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "ttl_seconds",
+        "score",
+        "metadata",
+        "scope_type",
+        "scope_id",
+    }
+)
 
 
 class MemoryWriteService:
@@ -394,8 +423,7 @@ class MemoryWriteService:
                 extra_document = cast(dict[str, Any], document)
                 for key in existing_meta:
                     if (
-                        key not in document
-                        and key != "text"
+                        key not in _MEMORY_SCHEMA_FIELDS
                         and key not in REMOVED_TRUST_FIELDS
                     ):
                         extra_document[key] = existing_meta[key]

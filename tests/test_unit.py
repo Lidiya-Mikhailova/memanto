@@ -933,9 +933,10 @@ class TestMemoryWriteServiceDelete:
             "content": "Original content",
             "actor_id": "tester",
             "source": "manual",
+            "source_ref": "original-source",
             "confidence": 0.8,
             "status": "active",
-            "tags": [],
+            "tags": ["old-tag"],
             # Extra field not in the MemoryRecord schema (e.g. on-prem data_store.json).
             "original_id": "orig-123",
             # Trust field removed 2026-06-29; must not be resurrected on update.
@@ -949,12 +950,18 @@ class TestMemoryWriteServiceDelete:
             MemoryWriteService(client).update_memory(
                 "mem-1",
                 "memanto_agent_test-agent",
-                {"content": "Updated content"},
+                {
+                    "content": "Updated content",
+                    "tags": [],
+                    "source_ref": None,
+                },
             )
 
         uploaded = client.documents.upload.call_args.kwargs["documents"][0]
         assert uploaded.get("original_id") == "orig-123"
         assert "validation_count" not in uploaded
+        assert "tags" not in uploaded
+        assert "source_ref" not in uploaded
 
     def _update_memory_with_source(self, source):
         """Run an update over a stored memory carrying *source* and return it."""
@@ -2463,4 +2470,3 @@ def test_windows_lock_does_not_retry_unexpected_errors(tmp_path, monkeypatch):
         with pytest.raises(OSError) as exc_info:
             atomic_write._acquire(handle, shared=False)
         assert exc_info.value.errno == errno.EBADF
->>>>>>> refs/rewritten/Resolve-merge-conflicts-with-temporal-and-okf-merge-prs
