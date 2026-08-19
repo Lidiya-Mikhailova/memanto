@@ -3179,6 +3179,19 @@
             "title": "Provenance",
             "description": "How memory was obtained (explicit_statement, inferred, observed, etc.)",
             "default": "explicit_statement"
+          },
+          "ttl_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttl Seconds",
+            "description": "Time-to-live in seconds. Memory expires after this duration."
           }
         },
         "type": "object",
@@ -4278,6 +4291,19 @@
             "title": "Provenance",
             "description": "How memory was obtained (explicit_statement, inferred, observed, etc.)",
             "default": "explicit_statement"
+          },
+          "ttl_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttl Seconds",
+            "description": "Time-to-live in seconds. Memory expires after this duration."
           }
         },
         "type": "object",
