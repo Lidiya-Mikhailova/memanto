@@ -149,13 +149,14 @@ def remove_agent(
         except Exception as e:
             errors.append(f"Permission removal: {e}")
 
-    # Remove code extension
-    try:
-        result = _remove_extension(agent, project_path, is_global)
-        if result:
-            steps.append(result)
-    except Exception as e:
-        errors.append(f"Extension removal: {e}")
+    # Remove code extension (agent-specific)
+    if agent.extension_file:
+        try:
+            ext_result = _remove_extension(agent, project_path, is_global)
+            if ext_result:
+                steps.append(ext_result)
+        except Exception as e:
+            errors.append(f"Extension removal: {e}")
 
     try:
         ConfigManager().remove_connection(
