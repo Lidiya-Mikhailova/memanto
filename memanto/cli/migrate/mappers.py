@@ -312,7 +312,7 @@ def map_letta(export: dict[str, Any]) -> list[dict[str, Any]]:
                 ("Letta agent_name", agent_name),
                 ("Letta tags", source_tags),
                 ("Letta metadata", passage.get("metadata")),
-                ("Source", passage.get("source")),  # passage may carry its own
+                ("Letta passage source", passage.get("source")),
                 ("Source created_at", created_at.isoformat() if created_at else None),
             ]
         )

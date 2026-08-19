@@ -110,6 +110,9 @@ class BatchRememberItem(BaseModel):
         "explicit_statement",
         description="How memory was obtained (explicit_statement, inferred, observed, etc.)",
     )
+    ttl_seconds: int | None = Field(
+        None, ge=1, description="Time-to-live in seconds. Memory expires after this duration."
+    )
 
     @field_validator("content")
     @classmethod

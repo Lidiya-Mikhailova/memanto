@@ -221,14 +221,15 @@ class TestMEMANTOAPI:
     async def test_remote_create_with_valid_credential_succeeds(self, auth_headers):
         """Remote peer with the correct management key can still manage agents."""
         transport = ASGITransport(app=app, client=("203.0.113.10", 54321))
-        async with AsyncClient(transport=transport, base_url="http://test") as remote:
-            response = await remote.post(
-                "/api/v2/agents",
-                headers=auth_headers,
-                json={"agent_id": "remote-ok-agent", "pattern": "support"},
-            )
-            assert response.status_code == 201
-            assert response.json()["agent_id"] == "remote-ok-agent"
+        with patch.object(settings, "MOORCHEH_API_KEY", "test-api-key"):
+            async with AsyncClient(transport=transport, base_url="http://test") as remote:
+                response = await remote.post(
+                    "/api/v2/agents",
+                    headers=auth_headers,
+                    json={"agent_id": "remote-ok-agent", "pattern": "support"},
+                )
+        assert response.status_code == 201
+        assert response.json()["agent_id"] == "remote-ok-agent"
 
     @pytest.mark.asyncio
     async def test_status_requires_management_access(self):

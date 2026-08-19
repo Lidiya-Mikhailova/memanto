@@ -349,7 +349,7 @@ def run_migration(
             )
 
         successful = int(result.get("successful") or 0)
-        failed = int(result.get("failed") or 0)
+        failed = int(result.get("failed") or 0) + int(result.get("rejected") or 0)
         summary.imported += successful
         summary.failed += failed
 

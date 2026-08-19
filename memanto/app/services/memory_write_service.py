@@ -254,7 +254,7 @@ class MemoryWriteService:
                     r["status"] = "failed"
 
             return {
-                "total_submitted": len(memories),
+                "total_submitted": len(results),
                 "successful": successful,
                 "failed": failed,
                 "rejected": rejected,
@@ -377,7 +377,9 @@ class MemoryWriteService:
                     else:
                         updated_memory.expires_at = raw_expires_at
 
-            # Step 3: Upload new version (overwrites existing document with same ID)
+            # Step 3: Upload new version (overwrites existing document with same ID).
+            # Uploading with the same ID is safe — Moorcheh treats it as an upsert,
+            # so the original is never lost if the upload call fails.
             from typing import Any, cast
 
             from moorcheh_sdk.types.document import Document
@@ -389,8 +391,6 @@ class MemoryWriteService:
             # Preserve extra metadata fields from the existing record not in MemoryRecord schema.
             existing_meta = existing_memory_data.get("metadata", existing_memory_data)
             if isinstance(existing_meta, dict):
-                # ``document`` is a TypedDict; cast to a plain dict to attach
-                # extra schema-external keys (e.g. original_id) dynamically.
                 extra_document = cast(dict[str, Any], document)
                 for key in existing_meta:
                     if (

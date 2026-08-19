@@ -421,6 +421,9 @@ async def remember(
             provenance=cast(ProvenanceType, request.provenance),
         )
 
+        if request.ttl_seconds:
+            memory.set_ttl(request.ttl_seconds)
+
         # Store memory in agent's namespace.
         result = await asyncio.to_thread(write_service.store_memory, memory)
         status = str(result.get("status", "unknown"))
@@ -500,6 +503,8 @@ async def batch_remember(
                 source=item.source,
                 provenance=cast(ProvenanceType, item.provenance),
             )
+            if item.ttl_seconds:
+                memory.set_ttl(item.ttl_seconds)
             memory_records.append(memory)
 
         # Store in batch
