@@ -2412,7 +2412,7 @@ def test_batch_upload_error_counts_each_pending_memory_as_failed():
     )
 
 
-def test_direct_sync_uses_cached_export_fast_path(tmp_path, monkeypatch):
+def test_direct_sync_exports_fresh_before_copying(tmp_path, monkeypatch):
     from memanto.cli.client.direct_client import DirectClient
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -2447,13 +2447,13 @@ def test_direct_sync_uses_cached_export_fast_path(tmp_path, monkeypatch):
     )
 
     target = project_dir / "MEMORY.md"
-    assert export_calls == []
+    assert export_calls == [("agent-1", 7)]
     assert target.read_text(encoding="utf-8") == cache_path.read_text(encoding="utf-8")
-    assert "stale memory" in target.read_text(encoding="utf-8")
+    assert "stale memory" not in target.read_text(encoding="utf-8")
     assert result == {
         "output_path": str(target.resolve()),
-        "total_memories": 1,
-        "source": "cache",
+        "total_memories": 2,
+        "source": "fresh",
     }
 
 
