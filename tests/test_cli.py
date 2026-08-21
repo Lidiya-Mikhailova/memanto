@@ -1391,7 +1391,7 @@ class TestMEMANTOCLI:
         """Test 'memanto memory sync'"""
         mock_all_clients.sync_memory_to_project.return_value = {
             "total_memories": 5,
-            "source": "cache",
+            "source": "fresh",
             "output_path": "project/memory.md",
         }
         result = runner.invoke(app, ["memory", "sync"])

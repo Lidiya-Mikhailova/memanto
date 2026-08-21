@@ -1637,50 +1637,42 @@ class SdkClient:
         """
         Sync agent memories to a project directory's MEMORY.md.
 
+        Always runs a fresh export first, so memories written earlier in the
+        same session are included. Falls back to the previous cached export
+        when the backend is unreachable, rather than leaving the project's
+        MEMORY.md untouched or wiping it.
+
         Args:
             agent_id: Target agent.
             project_dir: Path to the project directory.
-            limit_per_type: Max memories per type for fresh export (default 25).
+            limit_per_type: Max memories per type for the export (default 25).
 
         Returns:
             Dict with ``output_path``, ``total_memories``, ``source``
-            (``"cache"``, ``"fresh"``, or ``"stale-cache"`` if a refresh
-            failed and a previous export was reused instead).
+            (``"fresh"``, or ``"stale-cache"`` if the refresh failed and a
+            previous export was reused instead).
         """
         validate_safe_id(agent_id, "agent_id")
         cache_path = get_data_dir() / "exports" / f"{agent_id}_memory.md"
         target_path = Path(project_dir) / "MEMORY.md"
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if cache_path.exists():
-            # Fast path: copy cached export without an API-backed refresh.
-            shutil.copy2(str(cache_path), str(target_path))
-            content = cache_path.read_text(encoding="utf-8")
-            mem_count = content.count("### ")
-            return {
-                "output_path": str(target_path.resolve()),
-                "total_memories": mem_count,
-                "source": "cache",
-            }
-
         try:
-            # Run export function first (ensures ~/.memanto/exports/... is fresh)
             export_result = self.export_memory_md(
                 agent_id=agent_id, limit_per_type=limit_per_type
             )
         except ConnectionError:
-            if cache_path.exists():
-                # Backend unreachable, but we have a previously good export —
-                # serve that instead of wiping the project's MEMORY.md.
-                shutil.copy2(str(cache_path), str(target_path))
-                content = cache_path.read_text(encoding="utf-8")
-                mem_count = content.count("### ")
-                return {
-                    "output_path": str(target_path.resolve()),
-                    "total_memories": mem_count,
-                    "source": "stale-cache",
-                }
-            raise
+            if not cache_path.exists():
+                raise
+            # Backend unreachable, but we have a previously good export —
+            # serve that instead of wiping the project's MEMORY.md.
+            shutil.copy2(str(cache_path), str(target_path))
+            content = cache_path.read_text(encoding="utf-8")
+            return {
+                "output_path": str(target_path.resolve()),
+                "total_memories": content.count("### "),
+                "source": "stale-cache",
+            }
 
         exported_path = Path(export_result["output_path"])
         if exported_path.exists():
