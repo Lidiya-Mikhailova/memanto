@@ -158,12 +158,17 @@ class DailyAnalysisService:
         client = get_moorcheh_client()
         namespace = agent_namespace(agent_id)
 
+        retrieval_query = _truncate_embedding_query(
+            full_text,
+            model=get_active_embedding_model(),
+        )
+
         header_prompt = f"""
 Summarize the following session memories from {date} into a concise natural language daily summary.
 Focus on key themes, accomplishments, and high-level activities.
 
 Sessions Content:
-{full_text}
+{retrieval_query}
 """
 
         footer_prompt = f"""
@@ -176,10 +181,6 @@ Format the output as a Markdown report:
 ## Key Themes & Activities
 ...
 """
-        retrieval_query = _truncate_embedding_query(
-            full_text,
-            model=get_active_embedding_model(),
-        )
         try:
             generate_kwargs: dict[str, Any] = {
                 "namespace": namespace,
@@ -255,6 +256,14 @@ Format the output as a Markdown report:
         client = get_moorcheh_client()
         namespace = agent_namespace(agent_id)
 
+        # Use a truncated digest of the session content as the retrieval
+        # query so it stays within the embedding context window, and also
+        # use it in the prompt to prevent LLM context overflow.
+        query_digest = _truncate_embedding_query(
+            full_text,
+            model=get_active_embedding_model(),
+        )
+
         # --- Decouple instructions from the embedded query (issue #1329) ---
         # The ``query`` parameter is embedded for similarity retrieval and
         # must stay within the embedding model's context window (e.g. 2048
@@ -277,7 +286,7 @@ Identify:
 4. Conflicts: Semantic disagreements between new and historical memories.
 
 Recent Sessions Content:
-{full_text}"""
+{query_digest}"""
 
         footer_prompt = """You MUST respond with ONLY a valid JSON array. No markdown, no explanation, no code fences.
 Each element must be an object with these exact keys:
@@ -295,13 +304,6 @@ If there are NO conflicts, return an empty array: []
 Example response format:
 [{"type": "contradiction", "title": "Database preference changed", "old_memory_id": "abc-123", "old_content": "We use PostgreSQL", "new_memory_id": "def-456", "new_content": "We migrated to MongoDB", "description": "New memory contradicts old database preference", "recommendation": "keep_new"}]"""
 
-        # Use a truncated digest of the session content as the retrieval
-        # query so it stays within the embedding context window.  The full
-        # text is still available to the LLM via header_prompt.
-        query_digest = _truncate_embedding_query(
-            full_text,
-            model=get_active_embedding_model(),
-        )
 
         try:
             generate_kwargs = {

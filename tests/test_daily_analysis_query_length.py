@@ -70,7 +70,8 @@ def test_busy_day_conflict_report_keeps_embedded_query_within_context_window(
         len(call_kwargs["query"].encode("utf-8"))
         <= module._EMBEDDING_QUERY_TOKEN_BUDGET
     )
-    assert long_content in call_kwargs["header_prompt"]
+    assert call_kwargs["query"] in call_kwargs["header_prompt"]
+    assert len(call_kwargs["header_prompt"]) < len(long_content) + 1000
     assert (
         "You MUST respond with ONLY a valid JSON array" in call_kwargs["footer_prompt"]
     )
@@ -91,7 +92,8 @@ def test_busy_day_summary_keeps_embedded_query_within_context_window(
         len(call_kwargs["query"].encode("utf-8"))
         <= module._EMBEDDING_QUERY_TOKEN_BUDGET
     )
-    assert long_content in call_kwargs["header_prompt"]
+    assert call_kwargs["query"] in call_kwargs["header_prompt"]
+    assert len(call_kwargs["header_prompt"]) < len(long_content) + 1000
     assert "Format the output as a Markdown report" in call_kwargs["footer_prompt"]
 
 
