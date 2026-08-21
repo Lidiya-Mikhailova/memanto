@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from moorcheh_sdk import MoorchehClient
 
-from memanto.app.constants import REMOVED_TRUST_FIELDS
-from memanto.app.core import MemoryRecord, is_valid_source
+from memanto.app.constants import VALID_STATUS_TYPES
+from memanto.app.core import MemoryRecord, is_valid_expired_by, is_valid_source
 from memanto.app.services.memory_parsing_service import MemoryParsingService
 from memanto.app.utils.errors import MemoryOperationError
 from memanto.app.utils.ids import generate_memory_id
@@ -38,14 +38,38 @@ _MEMORY_SCHEMA_FIELDS = frozenset(
         "provenance",
         "created_at",
         "updated_at",
-        "expires_at",
-        "ttl_seconds",
+        "expired_at",
+        "expired_by",
         "score",
         "metadata",
         "scope_type",
         "scope_id",
     }
 )
+
+# Fields removed from the active schema. Old on-prem data_store.json records
+# may still carry them; they must never be copied forward on update or we
+# resurrect dead schema that no live read/write flow populates.
+#
+# The first group is the 2026-06-29 "trust" machinery. The second is the TTL
+# pair, replaced by the stamped `status` / `expired_at` / `expired_by`
+# lifecycle: a future-dated deadline no longer has any meaning, and leaving one
+# on a record would make it look expiry-bound to any external reader.
+_REMOVED_SCHEMA_FIELDS = frozenset(
+    {
+        "superseded_by",
+        "supersedes",
+        "validated_at",
+        "validation_count",
+        "contradiction_detected",
+        "expires_at",
+        "ttl_seconds",
+    }
+)
+
+# The stamp that travels with `status`. Owned by lifecycle transitions, never
+# carried forward blindly from a prior version of the record.
+_LIFECYCLE_STAMP_FIELDS = frozenset({"expired_at", "expired_by"})
 
 
 class MemoryWriteService:
@@ -357,6 +381,14 @@ class MemoryWriteService:
             if not is_valid_source(source_val):
                 source_val = "system"
 
+            # Records predating the two-state lifecycle can carry a retired
+            # status ("superseded", "provisional", "deleted"). Those are not
+            # valid StatusType values any more, so treat anything unrecognised
+            # as active rather than failing the edit outright.
+            status_val = updates.get("status", metadata.get("status", "active"))
+            if status_val not in VALID_STATUS_TYPES:
+                status_val = "active"
+
             # Build updated memory record
             updated_memory = MemoryRecord(
                 id=memory_id,  # Keep same ID
@@ -370,7 +402,7 @@ class MemoryWriteService:
                 source=source_val,
                 source_ref=updates.get("source_ref", metadata.get("source_ref")),
                 confidence=updates.get("confidence", metadata.get("confidence", 0.8)),
-                status=updates.get("status", metadata.get("status", "active")),
+                status=status_val,
                 tags=updates.get("tags", metadata.get("tags", [])),
                 provenance=updates.get(
                     "provenance", metadata.get("provenance") or "explicit_statement"
@@ -391,22 +423,29 @@ class MemoryWriteService:
                     updated_memory.created_at = raw_created
             updated_memory.updated_at = datetime.now(timezone.utc)
 
-            # Handle TTL
-            if "ttl_seconds" in updates:
-                updated_memory.set_ttl(updates["ttl_seconds"])
-            elif metadata.get("ttl_seconds"):
-                updated_memory.ttl_seconds = metadata["ttl_seconds"]
-                raw_expires_at = metadata.get("expires_at")
-                if raw_expires_at:
-                    if isinstance(raw_expires_at, str):
+            # Expiry stamp. An explicit lifecycle transition passes the stamp in
+            # `updates` and owns it outright; any other edit preserves whatever
+            # the stored record carries, so editing the text of an expired
+            # memory cannot silently revive it. Restoring leaves both fields
+            # None, which clears the stamp.
+            if _LIFECYCLE_STAMP_FIELDS & set(updates):
+                updated_memory.expired_at = updates.get("expired_at")
+                updated_memory.expired_by = updates.get("expired_by")
+            elif updated_memory.status == "expired":
+                raw_expired_at = metadata.get("expired_at")
+                if raw_expired_at:
+                    if isinstance(raw_expired_at, str):
                         try:
-                            updated_memory.expires_at = datetime.fromisoformat(
-                                raw_expires_at.replace("Z", "+00:00")
+                            updated_memory.expired_at = datetime.fromisoformat(
+                                raw_expired_at.replace("Z", "+00:00")
                             )
                         except (ValueError, AttributeError):
                             pass  # Keep the default if the stored timestamp is invalid
                     else:
-                        updated_memory.expires_at = raw_expires_at
+                        updated_memory.expired_at = raw_expired_at
+                expired_by = metadata.get("expired_by")
+                if is_valid_expired_by(expired_by):
+                    updated_memory.expired_by = expired_by
 
             # Step 3: Upload new version (overwrites existing document with same ID).
             # Uploading with the same ID is safe — Moorcheh treats it as an upsert,
@@ -419,14 +458,21 @@ class MemoryWriteService:
 
             document = cast(Document, updated_memory.to_moorcheh_document())
 
-            # Preserve extra metadata fields from the existing record not in MemoryRecord schema.
+            # Preserve extra metadata fields from the existing record (e.g. original_id
+            # in on-prem data_store.json) that aren't part of the MemoryRecord schema.
+            #
+            # The lifecycle stamp is deliberately excluded: `to_moorcheh_document`
+            # omits both fields when a memory is active, so copying them back
+            # from the old record would resurrect the previous expiry stamp on
+            # every restore.
             existing_meta = existing_memory_data.get("metadata", existing_memory_data)
             if isinstance(existing_meta, dict):
                 extra_document = cast(dict[str, Any], document)
                 for key in existing_meta:
                     if (
                         key not in _MEMORY_SCHEMA_FIELDS
-                        and key not in REMOVED_TRUST_FIELDS
+                        and key not in _REMOVED_SCHEMA_FIELDS
+                        and key not in _LIFECYCLE_STAMP_FIELDS
                     ):
                         extra_document[key] = existing_meta[key]
 
@@ -458,8 +504,66 @@ class MemoryWriteService:
         except Exception as e:
             raise MemoryOperationError(f"Failed to update memory: {e}")
 
+    def set_lifecycle(
+        self,
+        memory_id: str,
+        namespace: str,
+        *,
+        expired: bool,
+        reason: str | None = None,
+        when: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Move one memory between the active and expired states.
+
+        Expiring stamps ``status``, ``expired_at`` and ``expired_by`` together;
+        restoring clears all three. This is a metadata-only rewrite — the
+        memory's text, tags, confidence and timestamps are untouched, and no
+        content is destroyed either way.
+
+        Args:
+            memory_id: ID of the memory to transition
+            namespace: Namespace containing the memory
+            expired: True to expire, False to restore
+            reason: Why it expired (policy rule name, ``manual``,
+                ``conflict-resolution``). Required when expiring.
+            when: Expiry timestamp; defaults to now. Lets a sweep stamp a whole
+                batch with one consistent time.
+
+        Returns:
+            Dict describing the transition that was applied.
+        """
+        if expired:
+            if not reason:
+                raise MemoryOperationError("A reason is required when expiring a memory")
+            if not is_valid_expired_by(reason):
+                raise MemoryOperationError(
+                    f"Invalid expiry reason '{reason}': only letters, digits, "
+                    "'.', '_' and '-' are allowed"
+                )
+            stamped_at = when or datetime.now(timezone.utc)
+            updates: dict[str, Any] = {
+                "status": "expired",
+                "expired_at": stamped_at,
+                "expired_by": reason,
+            }
+        else:
+            stamped_at = None
+            updates = {"status": "active", "expired_at": None, "expired_by": None}
+
+        result = self.update_memory(memory_id, namespace, updates)
+
+        return {
+            **result,
+            "action": "expired" if expired else "restored",
+            "memory_id": memory_id,
+            "memory_status": updates["status"],
+            "expired_at": stamped_at.isoformat() if stamped_at else None,
+            "expired_by": reason if expired else None,
+        }
+
     def delete_memory(self, memory_id: str, namespace: str) -> bool:
-        """Delete memory by ID"""
+        """Permanently delete a memory by ID. Not reversible — prefer
+        ``set_lifecycle(expired=True)`` when the intent is to retire a memory."""
         try:
             from typing import Any, cast
 
