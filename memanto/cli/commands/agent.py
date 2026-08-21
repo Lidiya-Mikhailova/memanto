@@ -111,6 +111,9 @@ def agent_activate(
     duration_hours: int = typer.Option(
         6, "--hours", "-h", help="Activation duration in hours (default: 6)"
     ),
+    skip_sync: bool = typer.Option(
+        False, "--skip-sync", help="Do not automatically sync memories to project"
+    ),
 ):
     """Activate an agent and start its active session."""
     client = get_client()
@@ -123,6 +126,17 @@ def agent_activate(
         console.print(
             f"[dim]Activation expires: {result.get('expires_at', 'unknown')}[/dim]"
         )
+
+        if not skip_sync:
+            try:
+                sync_res = client.sync_memory_to_project(
+                    agent_id=agent_id,
+                    project_dir=".",
+                )
+                if sync_res.get("total_memories", 0) > 0:
+                    console.print(f"[dim]Auto-synced {sync_res['total_memories']} memories into project.[/dim]")
+            except Exception as sync_e:
+                console.print(f"[yellow]Warning: Auto-sync failed ({sync_e}). Run 'memanto memory sync' manually.[/yellow]")
 
     except Exception as e:
         msg = str(e)
