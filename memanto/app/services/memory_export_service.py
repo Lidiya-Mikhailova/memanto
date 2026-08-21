@@ -85,6 +85,18 @@ MEMORY_TYPE_ORDER = [
     "error",
 ]
 
+# Hot Cache ordering (types injected directly into agent system prompts)
+HOT_CACHE_TYPES = [
+    "instruction",
+    "fact",
+    "decision",
+    "goal",
+    "commitment",
+    "preference",
+    "learning",
+    "error",
+]
+
 
 def _one_line(value: Any, default: str = "") -> str:
     """Collapse untrusted Markdown metadata into a single display line."""
@@ -126,6 +138,7 @@ class MemoryExportService:
         agent_id: str,
         memories_by_type: dict[str, list[dict[str, Any]]],
         generated_at: str | None = None,
+        skip_empty_sections: bool = False,
     ) -> str:
         """
         Build the full Markdown string.
@@ -134,6 +147,7 @@ class MemoryExportService:
             agent_id: Agent identifier.
             memories_by_type: Dict mapping memory type -> list of memory dicts.
             generated_at: Timestamp for the header (defaults to now).
+            skip_empty_sections: If True, do not append headers for empty types.
 
         Returns:
             Formatted Markdown string.
@@ -158,10 +172,18 @@ class MemoryExportService:
         lines.append("---")
         lines.append("")
 
-        # Sections in canonical order
-        for mem_type in MEMORY_TYPE_ORDER:
+        # Order logic: use HOT_CACHE_TYPES if all provided types are in it, else Canonical.
+        order_to_use = MEMORY_TYPE_ORDER
+        provided_types = set(memories_by_type.keys())
+        if provided_types and provided_types.issubset(set(HOT_CACHE_TYPES)):
+            order_to_use = HOT_CACHE_TYPES
+
+        for mem_type in order_to_use:
             label, description = MEMORY_TYPE_META[mem_type]
             memories = memories_by_type.get(mem_type, [])
+
+            if not memories and skip_empty_sections:
+                continue
 
             lines.append(f"## {label}")
             lines.append("")
@@ -223,6 +245,7 @@ class MemoryExportService:
         agent_id: str,
         memories_by_type: dict[str, list[dict[str, Any]]],
         output_path: Path | None = None,
+        skip_empty_sections: bool = False,
     ) -> Path:
         """
         Generate and write memory.md to disk.
@@ -232,6 +255,7 @@ class MemoryExportService:
             memories_by_type: Dict mapping memory type -> list of memory dicts.
             output_path: Custom output path. Defaults to the active backend's
                 export directory with filename ``{agent_id}_memory.md``.
+            skip_empty_sections: If True, do not append headers for empty types.
 
         Returns:
             Absolute Path to the written file.
@@ -250,6 +274,8 @@ class MemoryExportService:
             output_path = validated_path
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        content = self.format_memory_md(agent_id, memories_by_type)
+        content = self.format_memory_md(
+            agent_id, memories_by_type, skip_empty_sections=skip_empty_sections
+        )
         output_path.write_text(content, encoding="utf-8")
         return output_path.resolve()

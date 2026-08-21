@@ -1632,55 +1632,78 @@ class SdkClient:
         self,
         agent_id: str,
         project_dir: str,
-        limit_per_type: int = 25,
+        limit_per_type: int = 10,
     ) -> dict[str, Any]:
         """
-        Sync agent memories to a project directory's MEMORY.md.
+        Sync agent memories by injecting them into the dynamic section of agent instruction files.
 
         Always runs a fresh export first, so memories written earlier in the
         same session are included. Falls back to the previous cached export
-        when the backend is unreachable, rather than leaving the project's
-        MEMORY.md untouched or wiping it.
+        when the backend is unreachable.
 
         Args:
             agent_id: Target agent.
             project_dir: Path to the project directory.
-            limit_per_type: Max memories per type for the export (default 25).
+            limit_per_type: Max memories to fetch overall (used as the semantic recall limit).
 
         Returns:
-            Dict with ``output_path``, ``total_memories``, ``source``
-            (``"fresh"``, or ``"stale-cache"`` if the refresh failed and a
-            previous export was reused instead).
+            Dict with ``output_path`` (comma separated list of updated files), ``total_memories``, ``source``
+            (``"cache"``, ``"fresh"``, or ``"stale-cache"`` if a refresh
+            failed and a previous export was reused instead).
         """
         validate_safe_id(agent_id, "agent_id")
-        cache_path = get_data_dir() / "exports" / f"{agent_id}_memory.md"
-        target_path = Path(project_dir) / "MEMORY.md"
-        target_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path = get_data_dir() / "exports" / f"{agent_id}_hot_memory.md"
+        
+        from memanto.cli.connect.engine import inject_dynamic_memories
+        from memanto.app.services.memory_export_service import HOT_CACHE_TYPES
 
         try:
-            export_result = self.export_memory_md(
-                agent_id=agent_id, limit_per_type=limit_per_type
+            # Semantic search to fetch only the most overarching rules and preferences
+            result = self.recall(
+                agent_id=agent_id,
+                query="global project rules, instructions, conventions, decisions, goals, and user preferences",
+                limit=limit_per_type * 3,  # Strict limit cap across all types
+                type=HOT_CACHE_TYPES,
+                min_similarity=0.5,        # Enforce semantic relevance
+            )
+            
+            # Group the semantic results back into types for the formatter
+            memories_by_type: dict[str, list] = {t: [] for t in HOT_CACHE_TYPES}
+            total_fetched = 0
+            for mem in result.get("memories", []):
+                mtype = mem.get("type")
+                if mtype in HOT_CACHE_TYPES:
+                    memories_by_type[mtype].append(mem)
+                    total_fetched += 1
+            
+            export_svc = self._get_export_service()
+            written_path = export_svc.write_memory_md(
+                agent_id=agent_id,
+                memories_by_type=memories_by_type,
+                output_path=cache_path,
+                skip_empty_sections=True,
             )
         except ConnectionError:
             if not cache_path.exists():
                 raise
             # Backend unreachable, but we have a previously good export —
-            # serve that instead of wiping the project's MEMORY.md.
-            shutil.copy2(str(cache_path), str(target_path))
+            # serve that instead.
             content = cache_path.read_text(encoding="utf-8")
+            updated_files = inject_dynamic_memories(Path(project_dir), content)
+            mem_count = content.count("### ")
             return {
-                "output_path": str(target_path.resolve()),
-                "total_memories": content.count("### "),
+                "output_path": ", ".join(updated_files) if updated_files else "none",
+                "total_memories": mem_count,
                 "source": "stale-cache",
             }
 
-        exported_path = Path(export_result["output_path"])
-        if exported_path.exists():
-            shutil.copy2(str(exported_path), str(target_path))
+        if written_path.exists():
+            content = written_path.read_text(encoding="utf-8")
+            updated_files = inject_dynamic_memories(Path(project_dir), content)
 
         return {
-            "output_path": str(target_path.resolve()),
-            "total_memories": export_result.get("total_memories", 0),
+            "output_path": ", ".join(updated_files) if updated_files else "none",
+            "total_memories": total_fetched,
             "source": "fresh",
         }
 

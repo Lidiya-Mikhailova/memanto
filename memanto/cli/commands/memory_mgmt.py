@@ -172,7 +172,7 @@ def memory_export(
         console.print(table)
         console.print(f"\n[green]OK Exported {total} memories successfully![/green]")
 
-    console.print(f"[dim]Output: {out_path}[/dim]")
+    console.print(f"[dim]Updated files: {out_path}[/dim]")
     console.print(f"[dim]Completed in {elapsed:.2f}s[/dim]")
 
 
@@ -185,10 +185,10 @@ def memory_sync(
         None, "--agent", "-a", help="Agent identifier (defaults to active agent)"
     ),
     limit: int = typer.Option(
-        25,
+        10,
         "--limit",
         "-n",
-        help="Maximum memories per type in the export (default 25)",
+        help="Maximum memories per type if fresh export needed (default 10)",
     ),
     okf: bool = typer.Option(
         False,
@@ -271,7 +271,7 @@ def memory_sync(
                 "OKF bundle. Memories may be out of date.[/yellow]"
             )
 
-        console.print(f"[dim]Output: {out_path}[/dim]")
+        console.print(f"[dim]Updated files: {out_path}[/dim]")
         console.print(f"[dim]Completed in {elapsed:.2f}s[/dim]")
         return
 
@@ -306,7 +306,7 @@ def memory_sync(
 
     if total == 0:
         console.print("\n[yellow]No memories found for this agent.[/yellow]")
-        console.print(f"[dim]Empty memory.md written to: {out_path}[/dim]")
+        console.print(f"[dim]Empty memories injected into: {out_path}[/dim]")
     else:
         console.print(f"\n[green]OK Synced {total} memories successfully![/green]")
         console.print(f"[dim]Source: {source_label}[/dim]")
@@ -317,5 +317,5 @@ def memory_sync(
             "export. Memories may be out of date.[/yellow]"
         )
 
-    console.print(f"[dim]Output: {out_path}[/dim]")
+    console.print(f"[dim]Updated files: {out_path}[/dim]")
     console.print(f"[dim]Completed in {elapsed:.2f}s[/dim]")
