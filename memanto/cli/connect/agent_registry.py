@@ -27,6 +27,7 @@ class AgentDef:
 
     # Instruction file (the main file where agent reads instructions)
     instruction_file: str | None = None  # e.g. "CLAUDE.md"
+    instruction_global_file: str | None = None  # e.g. "~/.vscode/User/prompts/memanto-memory-rules.instructions.md"
     instruction_format: str = "markdown"  # "markdown" | "mdc" | "append"
 
     # Skill directory paths (relative)
@@ -68,8 +69,12 @@ class AgentDef:
         self, project_dir: Path, is_global: bool
     ) -> Path | None:
         """Resolve instruction file path."""
-        if not self.instruction_file:
+        if not self.instruction_file and not self.instruction_global_file:
             return None
+            
+        if is_global and self.instruction_global_file:
+            return Path(self.instruction_global_file).expanduser()
+            
         if is_global:
             if self.config_global_dir:
                 base = Path.home() / self.config_global_dir.lstrip("~/")
@@ -230,7 +235,8 @@ ROO = AgentDef(
 GITHUB_COPILOT = AgentDef(
     name="github-copilot",
     display_name="GitHub Copilot",
-    instruction_file=".github/copilot-instructions.md",
+    instruction_file="CLAUDE.md",
+    instruction_global_file="~/.claude/CLAUDE.md",
     instruction_format="markdown",
     skill_local_dir=".agents/skills",
     skill_global_dir="~/.copilot/skills",
