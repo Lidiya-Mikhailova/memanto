@@ -84,7 +84,7 @@ def _run_connect_for_agent(agent_name: str, project_dir: str, is_global: bool) -
         if not agent.supports_hooks:
             summary_parts.append(
                 "\n[dim]Tip: Run 'memanto memory sync --project-dir .' before\n"
-                "starting a session to pre-populate MEMORY.md.[/dim]"
+                "starting a session to inject the latest dynamic memories.[/dim]"
             )
 
         console.print(

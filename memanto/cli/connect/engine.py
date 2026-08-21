@@ -575,3 +575,48 @@ def _write_or_remove_json(path: Path, data: dict[str, Any]) -> None:
     except (FileNotFoundError, OSError):
         # Best-effort cleanup: parent may be removed/changed concurrently or be non-removable.
         pass
+
+
+def inject_dynamic_memories(project_dir: Path, memory_content: str) -> list[str]:
+    """Inject exported memory markdown into the dynamic section of agent instruction files."""
+    from memanto.cli.connect.agent_registry import (
+        detect_memanto_installed,
+        detect_memanto_installed_global,
+    )
+    from memanto.cli.connect.templates import (
+        MEMANTO_DYNAMIC_SENTINEL,
+        MEMANTO_DYNAMIC_SENTINEL_END,
+    )
+
+    updated_files = []
+    
+    # 1. Gather all unique paths we need to update
+    target_paths = set()
+    
+    for agent in detect_memanto_installed(project_dir):
+        if agent.instruction_file:
+            path = agent.resolve_instruction_file(project_dir, is_global=False)
+            if path and path.exists():
+                target_paths.add(path)
+                
+    for agent in detect_memanto_installed_global():
+        if agent.instruction_file or agent.instruction_global_file:
+            path = agent.resolve_instruction_file(project_dir, is_global=True)
+            if path and path.exists():
+                target_paths.add(path)
+                
+    # 2. Inject into each path
+    for path in target_paths:
+        existing = path.read_text(encoding="utf-8")
+        if MEMANTO_DYNAMIC_SENTINEL in existing:
+            pattern = (
+                re.escape(MEMANTO_DYNAMIC_SENTINEL)
+                + r".*?"
+                + re.escape(MEMANTO_DYNAMIC_SENTINEL_END)
+            )
+            injected = f"{MEMANTO_DYNAMIC_SENTINEL}\n{memory_content}\n{MEMANTO_DYNAMIC_SENTINEL_END}"
+            updated = re.sub(pattern, lambda _: injected, existing, flags=re.DOTALL)
+            path.write_text(updated, encoding="utf-8")
+            updated_files.append(str(path))
+            
+    return updated_files

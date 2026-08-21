@@ -10,6 +10,10 @@ Per-agent instruction content and skill templates for MEMANTO integration.
 MEMANTO_SENTINEL = "<!-- MEMANTO-MANAGED-SECTION -->"
 MEMANTO_SENTINEL_END = "<!-- /MEMANTO-MANAGED-SECTION -->"
 
+MEMANTO_DYNAMIC_SENTINEL = "<!-- MEMANTO-DYNAMIC-MEMORIES -->"
+MEMANTO_DYNAMIC_SENTINEL_END = "<!-- /MEMANTO-DYNAMIC-MEMORIES -->"
+
+
 
 # Shared SKILL.md content (same across all agents)
 
@@ -59,13 +63,6 @@ Always categorize the source of the memory. Valid options:
 - `validated` — Confirmed/verified
 - `imported` — Brought in from an external source (file upload, sync, migration)
 
-## Source Types
-
-Always specify the tool or agent creating the memory.
-- For AI agents: Use the agent name (e.g., `--source claude_code` or `--source cursor`)
-- Generic fallbacks when no specific writer applies: `user`, `agent`, `tool`, `system`
-- Any label works, up to 64 letters, digits, `.`, `_`, or `-` (no spaces)
-
 ## Tagging Best Practices
 
 Use 2-5 tags per memory. Tags make memories findable.
@@ -93,13 +90,13 @@ memanto answer "What are my pending commitments?"
 
 ### After Important Work
 ```bash
-memanto remember "Implemented X using approach Y because Z. Commit abc123." --type decision --tags "feature-x" --confidence 0.95 --provenance "inferred" --source "claude_code"
-memanto remember "Learned that batch ops reduce API calls 100x." --type learning --tags "performance" --confidence 0.85 --provenance "observed" --source "claude_code"
+memanto remember "Implemented X using approach Y because Z. Commit abc123." --type decision --tags "feature-x" --confidence 0.95 --provenance "inferred" --source <agent_name>
+memanto remember "Learned that batch ops reduce API calls 100x." --type learning --tags "performance" --confidence 0.85 --provenance "observed" --source <agent_name>
 ```
 
 ### When User Corrects You
 ```bash
-memanto remember "User corrected: prefer pytest over unittest." --type learning --tags "correction,testing" --confidence 1.0 --provenance "corrected" --source "claude_code"
+memanto remember "User corrected: prefer pytest over unittest." --type learning --tags "correction,testing" --confidence 1.0 --provenance "corrected" --source <agent_name>
 ```
 
 ### Choosing Between recall and answer
@@ -150,7 +147,7 @@ memanto answer "What auth approach did we decide on and why?"
 
 ```bash
 # Store memory
-memanto remember "content" --type TYPE --tags "tag1,tag2" --confidence 0.9 --provenance "inferred" --source "claude_code"
+memanto remember "content" --type TYPE --tags "tag1,tag2" --confidence 0.9 --provenance "inferred" --source <agent_name>
 
 # Raw memory search (use for context-building, multi-step tasks)
 memanto recall "query" --limit 10 --type TYPE --min-similarity 0.8
@@ -173,7 +170,7 @@ memanto memory sync --project-dir .
 
 
 def _base_instruction_content(
-    tool_phrase: str = "the terminal", note_suffix: str = ""
+    agent_id: str = "<agent_name>", tool_phrase: str = "the terminal", note_suffix: str = ""
 ) -> str:
     """Generate base MEMANTO instruction content, adapted per agent."""
     note_line = ""
@@ -183,211 +180,121 @@ def _base_instruction_content(
     return f"""{MEMANTO_SENTINEL}
 ## MEMANTO - Your Active Memory Companion
 
-**MEMANTO is not a passive store. It is an active companion agent that works alongside you.**
-Don't treat MEMANTO like a static blob you query once and forget. It's a teammate you keep
-talking to, every preference, decision, and correction flows through it. MEMANTO remembers,
-recalls, and answers so you hold context across sessions, honor prior decisions, and avoid
-repeating mistakes the user already corrected.
+> **CRITICAL DIRECTIVE**: You are an agent equipped with Memanto. Without it, you are amnesiac. You have zero memory between chat sessions. Your ability to learn and adapt depends ENTIRELY on you actively writing to Memanto.
 
-Every memory operation in this session goes through MEMANTO. There is no exception.
+Every memory operation in this session goes through MEMANTO. There is no exception. All memanto commands are **shell commands**. Always run them using {tool_phrase}. Never simulate, describe, or "pretend to call" them.{note_line}
 
-> **CRITICAL**: All `memanto` commands are **shell commands**. Always run them using {tool_phrase}.
-> Never simulate, describe, or "pretend to call" them. If you cannot run the shell, say so explicitly instead of inventing memory state.
+### 1. THE ABSTRACTION RULE (HOW TO STORE)
+Users speak naturally and implicitly. When you store a memory, **ELEVATE IT TO A PRINCIPLE**. 
+- **WRONG (Activity Log)**: "User told me to use functional components."
+- **RIGHT (Project Rule)**: "React Architecture: Exclusively use functional components."
+Do not record the conversation. Record the universal rule.
 
-### NON-NEGOTIABLE RULES
+### 2. THE EXECUTION LOOP
+LLMs naturally want to answer the user immediately. **You must break this habit.** 
+If a trigger is met, your VERY FIRST ACTION must be a memanto tool call. Do not answer the user first.
 
-These are not suggestions. Follow each one on every turn.
+### 3. THE TRIGGER MATRIX (WHEN TO STORE)
+Trigger `memanto remember` immediately if you detect ANY of these conceptual shifts in the conversation:
+- [ ] **FRICTION / CORRECTIONS**: The user corrects a mistake you made, or expresses frustration at a repeated pattern.
+- [ ] **IMPLICIT PREFERENCES**: You notice or the user implies a standard way they like things done.
+- [ ] **SYSTEMIC SHIFTS**: The conversational flow reveals a change in how the project works.
 
-1. **Read `MEMORY.md` before doing anything.** It is auto-synced at session start and holds
-   the user's preferences, facts, goals, instructions, decisions, and commitments from every
-   prior session. You MUST honor what is written there. If you act against it, you are
-   breaking continuity the user is paying for.
-2. **Search memory before saying you don't know.** If the user asks about past context, an
-   earlier decision, a preference, or anything you are unsure about, you MUST run `recall`
-   or `answer` first. Saying "I don't have context" without searching is a failure.
-3. **Store proactively. Do not wait to be asked.** The moment a memory-worthy event happens
-   — a preference stated, a decision made, a fact learned, an instruction given, a goal set,
-   a mistake corrected — run `memanto remember` immediately, in the same turn.
-4. **Always pass full metadata to `remember`.** Every `memanto remember` call MUST include
-   `--type`, `--confidence`, `--provenance`, and `--source <your_agent_name>`. Never let
-   these default. Untyped, unsourced memories pollute the agent's recall quality.
-5. **One memory operation goes through MEMANTO. All of them do.** Do not keep mental notes,
-   in-context scratch pads, or "I'll remember this for next time" promises. If it matters
-   beyond this turn, it goes into MEMANTO. If it doesn't, drop it.
+### 4. THE DURABILITY TEST (WHAT NOT TO STORE)
+Before storing, ask yourself: *"Will this generalized principle fundamentally change how I generate code for this user 3 months from now?"*
+- **DO NOT STORE**: Step-by-step progress, routine bug fixes, UI tweaks, dependency updates, or literal chat summaries. 
 
-### Memory Operations — Use the Right One
+### 5. CONTEXT RETRIEVAL (MANUAL DEEP DIVES)
+For general operations, rely on the rules already injected into the dynamic memory section below. 
+If the user asks a question about past decisions, or explicitly asks you to "check memory" or "recall context" before starting a complex task, you MUST use `memanto recall` before proceeding. 
 
-MEMANTO gives you three primitives. They are equal-priority. Pick by intent, not by habit.
-
-| You want to... | Use | Why |
-|---|---|---|
-| Read raw memory chunks and apply them as context | `memanto recall "query"` | Best for context-building, multi-step work, comparing options |
-| Get one synthesized, grounded answer to a direct question | `memanto answer "question"` | Best for "what did we decide / prefer / commit to?" — saves you reading and merging |
-| Persist something memory-worthy | `memanto remember "content" --type ... --confidence ... --provenance ... --source ...` | Every preference, decision, fact, instruction, goal, lesson |
-| See what changed since last time | `memanto recall --changed-since "last 7 days"` | Catching up after a break |
-| See the most recent memories | `memanto recall --recent` | Fast context refresh |
-
-Do NOT always default to `recall`. If the user asked a direct question, `answer` is usually
-the right tool — it returns a grounded synthesis so you don't burn tokens re-reading raw
-chunks.
-
-### When to Call `remember` (Examples — Run Immediately)
-
-- User says *"I prefer tabs over spaces"*:
-  `memanto remember "User prefers tabs over spaces for indentation" --type preference --confidence 1.0 --provenance explicit_statement --source <your_agent_name>`
-- You decide to use Library X for reason Y:
-  `memanto remember "Chose Library X for reason Y; commit abc123" --type decision --confidence 0.95 --provenance inferred --source <your_agent_name>`
-- User corrects an approach:
-  `memanto remember "User corrected: use pytest, not unittest" --type learning --confidence 1.0 --provenance corrected --source <your_agent_name>`
-- A failed approach taught you something:
-  `memanto remember "Batch size > 100 fails with TimeoutError" --type error --confidence 0.95 --provenance observed --source <your_agent_name>`
+When you run a recall, the terminal output will be embedded directly in the chat history, ensuring both you and the user can see the retrieved context clearly.
 
 ### Command Reference
 
 ```bash
-# Store — ALWAYS pass full metadata
-memanto remember "content" --type <type> --confidence <0.0-1.0> --provenance <provenance> --source <agent_name>
+# Store - ALWAYS pass full metadata
+memanto remember "content" --type <type> --tags "tag1,tag2" --confidence <0.0-1.0> --provenance <provenance> --source {agent_id}
 
 # Recall raw context
-memanto recall "query"                              # semantic search
-memanto recall "query" --type <type> --limit 10     # filtered search
-memanto recall --recent --limit 10                  # newest first, no query
-memanto recall --as-of "2026-01-15"                 # state at a point in time
-memanto recall --changed-since "last 7 days"        # what changed since
+memanto recall "query" --limit 10
+memanto recall --recent --limit 10
+memanto recall --changed-since "last 7 days"
 
 # Synthesized answer (grounded RAG over memories)
 memanto answer "question"
-
-# Re-sync MEMORY.md (project-local cache)
-memanto memory sync --project-dir .
 ```
 
-**Memory types** (use the closest fit, do not invent new ones):
-`fact`, `preference`, `instruction`, `decision`, `event`, `goal`, `commitment`,
-`observation`, `learning`, `relationship`, `context`, `artifact`, `error`.
-
-**Provenance values**: `explicit_statement`, `inferred`, `observed`, `corrected`,
-`validated`, `imported`.
-
-**Confidence**: `1.0` for explicit user statements; `0.9-0.95` for strong consensus;
-`0.8-0.85` for observed patterns (3+ times); `0.6-0.75` for emerging patterns.
-{note_line}
+{MEMANTO_DYNAMIC_SENTINEL}
+{MEMANTO_DYNAMIC_SENTINEL_END}
 {MEMANTO_SENTINEL_END}"""
-
 
 def get_instruction_content(agent_name: str) -> str:
     """Get MEMANTO instruction section content for a specific agent."""
     templates = {
         "claude-code": _base_instruction_content(
+            agent_id="claude-code",
             tool_phrase="the Bash tool",
             note_suffix="The `memanto-memory` skill contains reference guidelines only (best practices, confidence levels, tagging). It is NOT executable — always use Bash for memanto commands.",
         ),
         "codex": _base_instruction_content(
+            agent_id="codex",
             tool_phrase="the terminal",
             note_suffix="The `memanto-memory` skill in `.agents/skills/memanto/` contains detailed reference guidelines (best practices, confidence levels, tagging).",
         ),
-        "cursor": _get_mdc_content(),
+        "cursor": _get_mdc_content(agent_id="cursor"),
         "windsurf": _base_instruction_content(
+            agent_id="windsurf",
             tool_phrase="the terminal",
             note_suffix="The `memanto-memory` skill in `.windsurf/skills/memanto/` contains detailed reference guidelines.",
         ),
         "gemini-cli": _base_instruction_content(
+            agent_id="gemini-cli",
             tool_phrase="the terminal",
             note_suffix="The `memanto-memory` skill in `.gemini/skills/memanto/` contains detailed reference guidelines.",
         ),
         "cline": _base_instruction_content(
+            agent_id="cline",
             tool_phrase="the terminal",
-            note_suffix="Run `memanto memory sync --project-dir .` at the start of each session to populate MEMORY.md.",
+            note_suffix="Run `memanto memory sync --project-dir .` at the start of each session to inject the latest dynamic memories into your system instructions.",
         ),
         "continue": _base_instruction_content(
+            agent_id="continue",
             tool_phrase="the terminal",
-            note_suffix="Run `memanto memory sync --project-dir .` at the start of each session to populate MEMORY.md.",
+            note_suffix="Run `memanto memory sync --project-dir .` at the start of each session to inject the latest dynamic memories into your system instructions.",
         ),
         "opencode": _base_instruction_content(
+            agent_id="opencode",
             tool_phrase="the terminal",
             note_suffix="The `memanto-memory` skill in `.agents/skills/memanto/` contains detailed reference guidelines.",
         ),
         "roo": _base_instruction_content(
+            agent_id="roo",
             tool_phrase="the terminal",
-            note_suffix="Run `memanto memory sync --project-dir .` at the start of each session to populate MEMORY.md.",
+            note_suffix="Run `memanto memory sync --project-dir .` at the start of each session to inject the latest dynamic memories into your system instructions.",
         ),
         "github-copilot": _base_instruction_content(
+            agent_id="github-copilot",
             tool_phrase="the terminal",
-            note_suffix="Run `memanto memory sync --project-dir .` at the start of each session to populate MEMORY.md.",
+            note_suffix="Run `memanto memory sync --project-dir .` at the start of each session to inject the latest dynamic memories into your system instructions.",
         ),
         "augment": _base_instruction_content(
+            agent_id="augment",
             tool_phrase="the terminal",
             note_suffix="The `memanto-memory` skill in `.augment/skills/memanto/` contains detailed reference guidelines.",
         ),
     }
-    return templates.get(agent_name, _base_instruction_content())
+    return templates.get(agent_name, _base_instruction_content(agent_id=agent_name))
 
 
-def _get_mdc_content() -> str:
+def _get_mdc_content(agent_id: str = "cursor") -> str:
     """Get MDC-formatted rules content for Cursor."""
     return f"""---
 description: MEMANTO — active memory companion. Mandatory rules for storing, recalling, and answering from persistent memory.
 alwaysApply: true
 ---
 
-{MEMANTO_SENTINEL}
-
-# MEMANTO — Your Active Memory Companion
-
-**MEMANTO is not a passive store. It is an active companion agent that works alongside you.**
-Don't treat MEMANTO like a static blob you query once and forget. It's a teammate you keep
-talking to — every preference, decision, and correction flows through it. MEMANTO remembers,
-recalls, and answers so you hold context across sessions, honor prior decisions, and avoid
-repeating mistakes the user already corrected. Every memory operation in this session goes
-through MEMANTO.
-
-> **CRITICAL**: All `memanto` commands are **shell commands**. Always run them in the terminal.
-> Never simulate or "pretend to call" them. If you cannot run the shell, say so explicitly
-> instead of inventing memory state.
-
-## NON-NEGOTIABLE RULES
-
-1. **Sync and read `MEMORY.md` at session start.** Run `memanto memory sync --project-dir .`
-   then read `MEMORY.md` in the project root. It holds the user's preferences, facts,
-   goals, instructions, decisions, and commitments from every prior session. You MUST
-   honor what is written there.
-2. **Search memory before saying you don't know.** If the user asks about past context,
-   an earlier decision, a preference, or anything you are unsure about, you MUST run
-   `recall` or `answer` first.
-3. **Store proactively. Do not wait to be asked.** The moment a memory-worthy event
-   happens — a preference stated, a decision made, a fact learned, an instruction given,
-   a goal set, a mistake corrected — run `memanto remember` immediately, in the same turn.
-4. **Always pass full metadata to `remember`.** Every call MUST include `--type`,
-   `--confidence`, `--provenance`, and `--source <your_agent_name>`. Never let these
-   default.
-5. **All memory operations go through MEMANTO.** No mental scratch pads, no "I'll
-   remember this next time." If it matters beyond this turn, it goes into MEMANTO.
-
-## Memory Operations — Use the Right One
-
-```bash
-memanto recall "query"      # raw memory chunks — for context-building, multi-step work
-memanto answer "question"   # one synthesized, grounded answer — for direct questions
-memanto recall --recent     # newest first, no query needed
-memanto recall --changed-since "last 7 days"
-memanto remember "content" --type <type> --confidence <0.0-1.0> --provenance <provenance> --source <agent_name>
-memanto memory sync --project-dir .
-```
-
-Do NOT always default to `recall`. `recall` returns raw chunks (best for context-building);
-`answer` returns one grounded synthesis (best for "what did we decide / prefer / commit
-to?"). Equal priority — pick by intent.
-
-**Memory types**: `fact`, `preference`, `instruction`, `decision`, `event`, `goal`,
-`commitment`, `observation`, `learning`, `relationship`, `context`, `artifact`, `error`.
-
-**Provenance**: `explicit_statement`, `inferred`, `observed`, `corrected`, `validated`,
-`imported`.
-
-**Confidence**: `1.0` for explicit user statements; `0.9-0.95` strong consensus;
-`0.8-0.85` for patterns seen 3+ times; below `0.6` — do not store.
-
-{MEMANTO_SENTINEL_END}"""
+{_base_instruction_content(agent_id=agent_id, tool_phrase="the terminal")}"""
 
 
 def get_skill_content() -> str:
