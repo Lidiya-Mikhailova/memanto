@@ -590,8 +590,6 @@ class SdkClient:
                 "source_ref",
                 "created_at",
                 "updated_at",
-                "expires_at",
-                "ttl_seconds",
             ):
                 val = item.get(opt_key)
                 if val is not None:
