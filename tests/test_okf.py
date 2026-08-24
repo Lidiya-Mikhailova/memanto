@@ -197,7 +197,7 @@ def test_foreign_okf_bundle_is_lossless(tmp_path):
         "description: One row per completed customer order.\n"
         "resource: https://console.cloud.google.com/bigquery?t=orders\n"
         "tags: [sales, revenue]\n"
-        "timestamp: 2026-05-28T14:30:00Z\n"
+        "generated: { by: reference_agent, at: 2026-05-28T14:30:00Z }\n"
         "owner: data-team\n"
         "---\n\n"
         "# Schema\nJoined with [customers](/tables/customers.md).\n",
