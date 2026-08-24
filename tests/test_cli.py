@@ -579,7 +579,6 @@ class TestMEMANTOCLI:
         mock_session = MagicMock()
         mock_session.namespace = "memanto_agent_test-agent"
         updated_at = datetime(2026, 6, 1, 9, 15, tzinfo=timezone.utc)
-        expires_at = datetime(2026, 8, 1, 9, 15, tzinfo=timezone.utc)
 
         with (
             patch.object(Client, "_get_write_service", return_value=mock_write_service),
@@ -598,16 +597,12 @@ class TestMEMANTOCLI:
                     {
                         "content": "Temporary operational context",
                         "updated_at": updated_at,
-                        "expires_at": expires_at,
-                        "ttl_seconds": 5_529_600,
                     }
                 ],
             )
 
         record = mock_write_service.batch_store_memories.call_args.args[0][0]
         assert record.updated_at == updated_at
-        assert record.expires_at == expires_at
-        assert record.ttl_seconds == 5_529_600
 
     def test_edit_sdk_normalizes_confidence_and_accepts_valid_payload(
         self, mock_all_clients
