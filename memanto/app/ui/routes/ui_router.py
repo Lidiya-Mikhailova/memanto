@@ -6,6 +6,7 @@ Serves the Web UI static files and provides UI-specific API endpoints.
 
 import asyncio
 import ipaddress
+import json
 import os
 import re
 import signal
@@ -550,7 +551,9 @@ async def list_conflict_scans(
         agent_id = aid
     _validate_agent_id(str(agent_id))
 
-    conflicts_dir = Path.home() / ".memanto" / "conflicts"
+    from memanto.app.config import get_conflicts_dir
+
+    conflicts_dir = get_conflicts_dir()
     scans: dict[str, dict] = {}
     if conflicts_dir.exists():
         suffix = "_conflicts.json"
@@ -1168,7 +1171,13 @@ def _migrate_load_or_export(
             raise HTTPException(
                 status_code=400, detail=f"Export file not found: {file_path}"
             )
-        return str(path), load_export(path)
+        try:
+            return str(path), load_export(path)
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Export file is not valid JSON: {file_path} ({exc})",
+            )
 
     if not api_key or not api_key.strip():
         raise HTTPException(

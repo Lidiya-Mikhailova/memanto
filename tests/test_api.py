@@ -227,8 +227,8 @@ class TestMEMANTOAPI:
                 headers=auth_headers,
                 json={"agent_id": "remote-ok-agent", "pattern": "support"},
             )
-            assert response.status_code == 201
-            assert response.json()["agent_id"] == "remote-ok-agent"
+        assert response.status_code == 201
+        assert response.json()["agent_id"] == "remote-ok-agent"
 
     @pytest.mark.asyncio
     async def test_status_requires_management_access(self):
@@ -2834,6 +2834,7 @@ class TestCWE200ApiKeyLeak:
         assert new_token
         assert new_token != old_token
 
+        client.cookies = Cookies()
         stale_response = await client.post(
             f"/api/v2/agents/{self.TEST_AGENT_ID}/recall/recent",
             headers=session_headers,
@@ -2841,6 +2842,7 @@ class TestCWE200ApiKeyLeak:
         )
         assert stale_response.status_code == 401
 
+        client.cookies = Cookies()
         fresh_response = await client.post(
             f"/api/v2/agents/{self.TEST_AGENT_ID}/recall/recent",
             headers={**auth_headers, "X-Session-Token": new_token},

@@ -41,7 +41,7 @@ from memanto.app.constants import (
 from memanto.app.utils.errors import (
     AgentNotFoundError,
     InvalidSessionTokenError,
-    MemoryError,
+    MemoryOperationError,
     SessionError,
     SessionExpiredError,
     SessionNotFoundError,
@@ -644,7 +644,6 @@ class DirectClient:
         """
         # Ensure there is a valid, non-expired session for this agent
         session = self._get_validated_session_for_agent(agent_id)
-        _ = session
 
         self._validate_memory_input(memory_type, title, content, confidence)
 
@@ -678,10 +677,9 @@ class DirectClient:
 
         # Log to local session Markdown summary only after a durable write.
         if self.session_token and is_successful_write_result(result):
-            session_id = "unknown"
             self._get_session_service().try_log_memory_to_session_summary(
                 agent_id=agent_id,
-                session_id=session_id,
+                session_id=session.session_id,
                 memory_record=memory,
                 memory_id=result.get("id"),
             )
@@ -715,7 +713,7 @@ class DirectClient:
             ValueError: If batch is empty or exceeds 100 items.
         """
         # Ensure there is a valid, non-expired session for this agent
-        self._get_validated_session_for_agent(agent_id)
+        session = self._get_validated_session_for_agent(agent_id)
 
         if not memories:
             raise ValueError("Batch must contain at least one memory")
@@ -759,7 +757,13 @@ class DirectClient:
                 "source": item.get("source") or "user",
                 "provenance": provenance,
             }
-            for opt_key in ("source_ref", "created_at", "updated_at"):
+            for opt_key in (
+                "source_ref",
+                "created_at",
+                "updated_at",
+                "expires_at",
+                "ttl_seconds",
+            ):
                 val = item.get(opt_key)
                 if val is not None:
                     kwargs[opt_key] = val
@@ -779,29 +783,35 @@ class DirectClient:
 
         # Log each memory to local session Markdown summary
         if self.session_token:
-            session_id = "unknown"
+            session_id = session.session_id
             session_svc = self._get_session_service()
 
             # Extract per-memory IDs from the batch result
             if not isinstance(result, dict):
-                raise MemoryError(
+                raise MemoryOperationError(
                     message="Data corruption detected: Received malformed batch result from storage layer.",
                     details={"item_preview": str(result)[:100]},
                 )
 
-            batch_results = result.get("results", [])
-            if not isinstance(batch_results, list):
-                raise MemoryError(
+            if "results" not in result:
+                raise MemoryOperationError(
+                    message="Data corruption detected: Missing 'results' in batch response from storage layer.",
+                    details={"item_preview": str(result)[:100]},
+                )
+
+            batch_results = result["results"]
+            if not isinstance(batch_results, list) or len(batch_results) != len(
+                memory_records
+            ):
+                raise MemoryOperationError(
                     message="Data corruption detected: Received malformed batch result array from storage layer.",
                     details={"item_preview": str(batch_results)[:100]},
                 )
 
             for i, mem in enumerate(memory_records):
-                item_result = batch_results[i] if i < len(batch_results) else None
-                if item_result is not None and (
-                    not isinstance(item_result, dict) or not item_result
-                ):
-                    raise MemoryError(
+                item_result = batch_results[i]
+                if not isinstance(item_result, dict) or not item_result:
+                    raise MemoryOperationError(
                         message="Data corruption detected: Received malformed batch result from storage layer.",
                         details={"item_preview": str(item_result)[:100]},
                     )
@@ -1508,9 +1518,9 @@ class DirectClient:
         if not date:
             date = utc_date_str()
 
-        json_path = (
-            Path.home() / ".memanto" / "conflicts" / f"{agent_id}_{date}_conflicts.json"
-        )
+        from memanto.app.config import get_conflict_report_path
+
+        json_path = get_conflict_report_path(agent_id, date)
 
         if not json_path.exists():
             return []
@@ -1568,9 +1578,9 @@ class DirectClient:
                 f"Invalid action '{action}'. Must be one of: {', '.join(sorted(valid_actions))}"
             )
 
-        json_path = (
-            Path.home() / ".memanto" / "conflicts" / f"{agent_id}_{date}_conflicts.json"
-        )
+        from memanto.app.config import get_conflict_report_path
+
+        json_path = get_conflict_report_path(agent_id, date)
         if not json_path.exists():
             raise ValueError(f"No conflict report found for {agent_id} on {date}")
 

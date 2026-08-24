@@ -4,12 +4,15 @@ MEMANTO Core Unit Tests (No Server Required)
 Tests the session and agent services directly without HTTP layer.
 """
 
+import errno
 import os
 import stat
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import jwt
@@ -22,6 +25,7 @@ from memanto.app.models.session import AgentCreate, AgentPattern, Session, Sessi
 from memanto.app.services.agent_service import AgentService
 from memanto.app.services.memory_write_service import MemoryWriteService
 from memanto.app.services.session_service import SessionService
+from memanto.app.utils import atomic_write
 from memanto.app.utils.errors import InvalidSessionTokenError
 
 
@@ -1055,9 +1059,10 @@ class TestMemoryWriteServiceDelete:
             "content": "Original content",
             "actor_id": "tester",
             "source": "manual",
+            "source_ref": "original-source",
             "confidence": 0.8,
             "status": "active",
-            "tags": [],
+            "tags": ["old-tag"],
             # Extra field not in the MemoryRecord schema (e.g. on-prem data_store.json).
             "original_id": "orig-123",
             # Trust field removed 2026-06-29; must not be resurrected on update.
@@ -1071,12 +1076,18 @@ class TestMemoryWriteServiceDelete:
             MemoryWriteService(client).update_memory(
                 "mem-1",
                 "memanto_agent_test-agent",
-                {"content": "Updated content"},
+                {
+                    "content": "Updated content",
+                    "tags": [],
+                    "source_ref": None,
+                },
             )
 
         uploaded = client.documents.upload.call_args.kwargs["documents"][0]
         assert uploaded.get("original_id") == "orig-123"
         assert "validation_count" not in uploaded
+        assert "tags" not in uploaded
+        assert "source_ref" not in uploaded
 
     def _update_memory_with_source(self, source):
         """Run an update over a stored memory carrying *source* and return it."""
@@ -1204,7 +1215,7 @@ class TestMemoryWriteServiceUpdateIntegrity:
         self, upload_result, expected_status
     ):
         from memanto.app.services.memory_write_service import MemoryWriteService
-        from memanto.app.utils.errors import MemoryError
+        from memanto.app.utils.errors import MemoryOperationError as MemoryError
 
         client = MagicMock()
         client.documents.upload.return_value = upload_result
@@ -1236,6 +1247,57 @@ class TestMemoryWriteServiceUpdateIntegrity:
             f"Failed to upload updated memory mem-1: {expected_status}"
         )
         client.documents.delete.assert_not_called()
+
+    def test_original_id_survives_read_format_update_cycle(self):
+        """original_id must survive get_memory() -> _format_memory_item() -> update_memory()."""
+        from unittest.mock import MagicMock, patch
+
+        from memanto.app.services.memory_read_service import MemoryReadService
+        from memanto.app.services.memory_write_service import MemoryWriteService
+
+        mock_client = MagicMock()
+        mock_client.documents.upload.return_value = {"status": "success"}
+
+        raw_moorcheh_document = {
+            "id": "mem_abc123",
+            "text": "[FACT] Original Title\n\nOriginal content\n\nTags: tag1, tag2",
+            "original_id": "mem_abc123",  # Test top-level extraction
+            "metadata": {
+                "id": "mem_abc123",
+                "memory_type": "fact",
+                "agent_id": "test-agent",
+                "actor_id": "user",
+                "source": "user",
+                "confidence": 0.8,
+                "status": "active",
+                "provenance": "explicit_statement",
+                "created_at": "2026-07-01T10:00:00+00:00",
+                "updated_at": "2026-07-01T10:00:00+00:00",
+                "superseded_by": "mem_new_001",
+                "tags": "tag1,tag2",
+            },
+        }
+
+        read_service = MemoryReadService(mock_client)
+        formatted = read_service._format_memory_item(raw_moorcheh_document)
+
+        assert "original_id" in formatted
+        assert "superseded_by" not in formatted
+
+        with patch(
+            "memanto.app.services.memory_read_service.MemoryReadService.get_memory",
+            return_value=formatted,
+        ):
+            MemoryWriteService(mock_client).update_memory(
+                memory_id="mem_abc123",
+                namespace="memanto_agent_test-agent",
+                updates={"content": "Updated content"},
+            )
+
+            uploaded_documents = mock_client.documents.upload.call_args.kwargs[
+                "documents"
+            ]
+            assert uploaded_documents[0].get("original_id") == "mem_abc123"
 
 
 class TestMemoryReadServiceFormatting:
@@ -2622,6 +2684,44 @@ def test_ui_static_xss_escapes():
 
     for raw in forbidden_raw_interpolations:
         assert raw not in ui_html
+
+
+def test_windows_lock_retries_contention_without_deadline(tmp_path, monkeypatch):
+    """Windows lock contention retries until acquisition succeeds."""
+    attempts = 0
+
+    def locking(_fileno, mode, _length):
+        nonlocal attempts
+        assert mode == 1
+        attempts += 1
+        if attempts < 3:
+            raise OSError(errno.EACCES, "lock is held")
+
+    fake_msvcrt = SimpleNamespace(LK_NBLCK=1, locking=locking)
+    monkeypatch.setattr(atomic_write.sys, "platform", "win32")
+    monkeypatch.setattr(atomic_write.time, "sleep", lambda _seconds: None)
+    monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
+
+    with (tmp_path / "lock").open("a+b") as handle:
+        atomic_write._acquire(handle, shared=True)
+
+    assert attempts == 3
+
+
+def test_windows_lock_does_not_retry_unexpected_errors(tmp_path, monkeypatch):
+    """Unexpected Windows lock errors still surface immediately."""
+
+    def locking(_fileno, _mode, _length):
+        raise OSError(errno.EBADF, "bad handle")
+
+    fake_msvcrt = SimpleNamespace(LK_NBLCK=1, locking=locking)
+    monkeypatch.setattr(atomic_write.sys, "platform", "win32")
+    monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
+
+    with (tmp_path / "lock").open("a+b") as handle:
+        with pytest.raises(OSError) as exc_info:
+            atomic_write._acquire(handle, shared=False)
+        assert exc_info.value.errno == errno.EBADF
 
 
 def test_client_delete_agent_clears_session_state(

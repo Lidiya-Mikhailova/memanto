@@ -48,7 +48,7 @@ from memanto.app.services.memory_write_service import MemoryWriteService
 from memanto.app.services.policy_presets import PRESETS, list_presets, load_preset
 from memanto.app.utils.errors import (
     AuthorizationError,
-    MemoryError,
+    MemoryOperationError,
     map_error_to_http_exception,
 )
 from memanto.app.utils.temporal_helpers import (
@@ -462,6 +462,9 @@ async def remember(
             provenance=cast(ProvenanceType, request.provenance),
         )
 
+        if request.ttl_seconds:
+            memory.set_ttl(request.ttl_seconds)
+
         # Store memory in agent's namespace.
         result = await asyncio.to_thread(write_service.store_memory, memory)
         status = str(result.get("status", "unknown"))
@@ -541,6 +544,8 @@ async def batch_remember(
                 source=item.source,
                 provenance=cast(ProvenanceType, item.provenance),
             )
+            if item.ttl_seconds:
+                memory.set_ttl(item.ttl_seconds)
             memory_records.append(memory)
 
         # Store in batch
@@ -724,14 +729,14 @@ async def extract_memories_from_conversation(
         session_service = get_session_service()
 
         if not isinstance(result, dict):
-            raise MemoryError(
+            raise MemoryOperationError(
                 message="Data corruption detected: Received malformed batch result from storage layer.",
                 details={"item_preview": str(result)[:100]},
             )
 
         batch_results = result.get("results", [])
         if not isinstance(batch_results, list):
-            raise MemoryError(
+            raise MemoryOperationError(
                 message="Data corruption detected: Received malformed batch result array from storage layer.",
                 details={"item_preview": str(batch_results)[:100]},
             )
@@ -741,7 +746,7 @@ async def extract_memories_from_conversation(
             if item_result is not None and (
                 not isinstance(item_result, dict) or not item_result
             ):
-                raise MemoryError(
+                raise MemoryOperationError(
                     message="Data corruption detected: Received malformed batch result from storage layer.",
                     details={"item_preview": str(item_result)[:100]},
                 )
