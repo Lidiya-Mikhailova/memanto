@@ -4,7 +4,7 @@ MEMANTO Core Architecture - Namespace Strategy & Memory Records
 
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, StringConstraints, field_validator
@@ -129,6 +129,10 @@ class MemoryRecord(BaseModel):
     # ``manual``, or ``conflict-resolution``.
     expired_at: datetime | None = None
     expired_by: BoundedExpiredBy | None = None
+
+    def set_ttl(self, ttl_seconds: int) -> None:
+        """Set expiration time based on a TTL in seconds."""
+        self.expired_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
 
     def to_moorcheh_document(self) -> dict[str, Any]:
         """

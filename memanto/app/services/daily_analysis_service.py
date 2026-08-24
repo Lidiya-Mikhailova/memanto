@@ -304,7 +304,6 @@ If there are NO conflicts, return an empty array: []
 Example response format:
 [{"type": "contradiction", "title": "Database preference changed", "old_memory_id": "abc-123", "old_content": "We use PostgreSQL", "new_memory_id": "def-456", "new_content": "We migrated to MongoDB", "description": "New memory contradicts old database preference", "recommendation": "keep_new"}]"""
 
-
         try:
             generate_kwargs = {
                 "namespace": namespace,

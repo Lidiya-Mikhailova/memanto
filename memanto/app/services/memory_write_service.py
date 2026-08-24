@@ -534,7 +534,9 @@ class MemoryWriteService:
         """
         if expired:
             if not reason:
-                raise MemoryOperationError("A reason is required when expiring a memory")
+                raise MemoryOperationError(
+                    "A reason is required when expiring a memory"
+                )
             if not is_valid_expired_by(reason):
                 raise MemoryOperationError(
                     f"Invalid expiry reason '{reason}': only letters, digits, "
