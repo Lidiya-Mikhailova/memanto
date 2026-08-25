@@ -213,6 +213,17 @@ async def update_ui_config(updates: dict, _: None = Depends(_require_local)):
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+        # config.yaml is overlaid onto settings at process start, so apply the
+        # session toggles to the running server too - otherwise flipping them
+        # in the UI would not take effect until the next restart.
+        for _yaml_key, _settings_attr in (
+            ("auto_renew_enabled", "SESSION_AUTO_RENEW_ENABLED"),
+            ("auto_recreate_enabled", "SESSION_AUTO_RECREATE_ENABLED"),
+        ):
+            _toggle = updates["session"].get(_yaml_key)
+            if isinstance(_toggle, bool):
+                setattr(settings, _settings_attr, _toggle)
+
     if "cli" in updates and isinstance(updates["cli"], dict):
         data = _config_manager.load_yaml()
         if "cli" not in data:
