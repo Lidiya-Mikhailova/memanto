@@ -149,14 +149,14 @@ class TestLoopbackDetection:
 
     def test_loopback_origin_accepted(self):
         """Same-origin UI requests from localhost must be allowed."""
-        from memanto.app.ui.routes.ui_router import _is_loopback_origin
+        from memanto.app.routes.auth_deps import _is_loopback_origin
 
         assert _is_loopback_origin("http://localhost:8000") is True
         assert _is_loopback_origin("http://127.0.0.1:8000") is True
         assert _is_loopback_origin("http://[::1]:8000") is True
 
     def test_remote_origin_rejected(self):
-        from memanto.app.ui.routes.ui_router import _is_loopback_origin
+        from memanto.app.routes.auth_deps import _is_loopback_origin
 
         assert _is_loopback_origin("https://evil.example") is False
 
@@ -166,6 +166,7 @@ class TestLoopbackDetection:
 
         mock_request = MagicMock()
         mock_request.client.host = "127.0.0.1"
+        mock_request.headers = {}
         asyncio.run(_require_local(mock_request))  # must not raise
 
     def test_require_local_allows_ipv4_mapped_loopback(self):
@@ -174,4 +175,5 @@ class TestLoopbackDetection:
 
         mock_request = MagicMock()
         mock_request.client.host = "::ffff:127.0.0.1"
+        mock_request.headers = {}
         asyncio.run(_require_local(mock_request))  # must not raise

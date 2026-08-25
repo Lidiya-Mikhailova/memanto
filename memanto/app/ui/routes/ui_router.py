@@ -14,7 +14,6 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from memanto.app.routes.auth_deps import _is_cross_site_browser_request
 
 from fastapi import (
     APIRouter,
@@ -29,7 +28,11 @@ from fastapi.staticfiles import StaticFiles
 
 from memanto.app.clients.backend import Backend
 from memanto.app.config import settings
-from memanto.app.routes.auth_deps import clear_session_cookie, set_session_cookie
+from memanto.app.routes.auth_deps import (
+    _is_cross_site_browser_request,
+    clear_session_cookie,
+    set_session_cookie,
+)
 from memanto.app.utils.temporal_helpers import utc_date_str
 from memanto.app.utils.validation import validate_safe_id
 from memanto.cli.client.direct_client import DirectClient
@@ -95,8 +98,6 @@ async def _require_local(request: Request) -> None:
             ),
         )
 
-    from memanto.app.routes.auth_deps import _is_cross_site_browser_request
-    
     if _is_cross_site_browser_request(request):
         raise HTTPException(
             status_code=403,

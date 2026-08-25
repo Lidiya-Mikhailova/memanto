@@ -391,7 +391,8 @@ class _MemantoClient:
             if not self._is_refreshable_auth_error(error):
                 raise
             logger.debug(
-                "Auth failure during %s, attempting auto-refresh", operation,
+                "Auth failure during %s, attempting auto-refresh",
+                operation,
                 exc_info=True,
             )
             if not self.auto_refresh():

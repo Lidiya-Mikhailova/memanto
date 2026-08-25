@@ -6,7 +6,6 @@ monkeypatched with an in-memory fake.
 """
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -627,4 +626,3 @@ def test_memanto_client_auto_refresh_on_expiration(tmp_path):
     # Verify that activate_agent was called to get a new token
     sdk.activate_agent.assert_called_once_with("agent-1", duration_hours=None)
     assert (tmp_path / ".memanto_session_token").read_text() == "new-session-token"
-

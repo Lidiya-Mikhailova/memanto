@@ -107,7 +107,7 @@ def _is_loopback_host(host: str | None) -> bool:
 
 def _is_loopback_origin(origin: str | None) -> bool:
     """Return True when a browser Origin points at the local Memanto host."""
-    if not origin:
+    if not origin or not isinstance(origin, str):
         return False
     try:
         parsed = urlsplit(origin)
@@ -120,7 +120,7 @@ def _is_loopback_origin(origin: str | None) -> bool:
 
 def _is_loopback_host_header(host: str | None) -> bool:
     """Return True when an HTTP Host header names a loopback interface."""
-    if not host:
+    if not host or not isinstance(host, str):
         return False
     try:
         hostname = urlsplit(f"//{host}").hostname
@@ -132,10 +132,14 @@ def _is_loopback_host_header(host: str | None) -> bool:
 def _is_cross_site_browser_request(request: Request) -> bool:
     """Detect browser requests that must not inherit loopback trust."""
     origin = request.headers.get("origin")
-    if origin is not None:
+    if origin is not None and isinstance(origin, str):
         return not _is_loopback_origin(origin)
 
-    fetch_site = request.headers.get("sec-fetch-site", "").strip().lower()
+    fetch_site = request.headers.get("sec-fetch-site", "")
+    if isinstance(fetch_site, str):
+        fetch_site = fetch_site.strip().lower()
+    else:
+        fetch_site = ""
     return fetch_site in {"cross-site", "same-site"}
 
 

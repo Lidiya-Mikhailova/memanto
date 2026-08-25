@@ -184,6 +184,7 @@ class TestMEMANTOAPI:
         response = await client.post(
             "/api/v2/agents",
             headers={
+                "Host": "localhost:8000",
                 "Origin": "https://evil.example",
                 "Sec-Fetch-Site": "cross-site",
             },
@@ -205,7 +206,10 @@ class TestMEMANTOAPI:
 
         response = await client.post(
             "/api/v2/agents/cross-site-activate/activate",
-            headers={"Sec-Fetch-Site": "cross-site"},
+            headers={
+                "Host": "localhost:8000",
+                "Sec-Fetch-Site": "cross-site",
+            },
         )
 
         assert response.status_code == 401
