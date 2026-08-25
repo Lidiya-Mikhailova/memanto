@@ -521,7 +521,7 @@ def map_okf(export: dict[str, Any]) -> list[dict[str, Any]]:
         extra = entry.get("extra") or {}
         generated = extra.get("generated", {})
         gen_at = generated.get("at") if isinstance(generated, dict) else None
-        created_at = _parse_dt(gen_at)
+        created_at = _parse_dt(gen_at) or _parse_dt(entry.get("timestamp"))
 
         updated_at = _parse_dt(x_memanto.get("updated_at")) or migrated_at
         expires_at = _parse_dt(x_memanto.get("expires_at"))

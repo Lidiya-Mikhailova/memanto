@@ -285,7 +285,13 @@ class OkfExportService:
         for src, destination_name in planned:
             text = src.read_text(encoding="utf-8")
             if not text.startswith("---"):
-                front = f"---\ntype: Context Document\ntitle: {src.stem}\n---\n\n"
+                frontmatter = yaml.safe_dump(
+                    {"type": "Context Document", "title": src.stem},
+                    sort_keys=False,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                ).strip()
+                front = f"---\n{frontmatter}\n---\n\n"
                 (section_dir / destination_name).write_text(
                     front + text, encoding="utf-8"
                 )
