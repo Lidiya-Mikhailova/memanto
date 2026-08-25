@@ -14,6 +14,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import (
     APIRouter,
@@ -76,6 +77,14 @@ def _is_loopback(host: str | None) -> bool:
         return False
 
 
+def _is_loopback_origin(origin: str | None) -> bool:
+    """Return True when a browser Origin header points at localhost."""
+    if not origin:
+        return False
+    hostname = urlparse(origin).hostname
+    return hostname == "localhost" or _is_loopback(hostname)
+
+
 async def _require_local(request: Request) -> None:
     """Reject requests that do not originate from the loopback interface.
 
@@ -92,6 +101,21 @@ async def _require_local(request: Request) -> None:
                 "UI management endpoints are only accessible from localhost. "
                 f"Request origin: {client_host}"
             ),
+        )
+
+    origin = request.headers.get("origin")
+    origin = origin if isinstance(origin, str) else None
+    if origin and not _is_loopback_origin(origin):
+        raise HTTPException(
+            status_code=403,
+            detail="UI management endpoints reject cross-site browser requests.",
+        )
+
+    sec_fetch_site = request.headers.get("sec-fetch-site", "").lower()
+    if sec_fetch_site in {"cross-site", "same-site"}:
+        raise HTTPException(
+            status_code=403,
+            detail="UI management endpoints reject cross-site browser requests.",
         )
 
 
