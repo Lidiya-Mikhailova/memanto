@@ -28,7 +28,11 @@ from fastapi.staticfiles import StaticFiles
 
 from memanto.app.clients.backend import Backend
 from memanto.app.config import settings
-from memanto.app.routes.auth_deps import clear_session_cookie, set_session_cookie
+from memanto.app.routes.auth_deps import (
+    _is_cross_site_browser_request,
+    clear_session_cookie,
+    set_session_cookie,
+)
 from memanto.app.utils.temporal_helpers import utc_date_str
 from memanto.app.utils.validation import validate_safe_id
 from memanto.cli.client.direct_client import DirectClient
@@ -92,6 +96,12 @@ async def _require_local(request: Request) -> None:
                 "UI management endpoints are only accessible from localhost. "
                 f"Request origin: {client_host}"
             ),
+        )
+
+    if _is_cross_site_browser_request(request):
+        raise HTTPException(
+            status_code=403,
+            detail="UI management endpoints reject cross-site browser requests.",
         )
 
 
