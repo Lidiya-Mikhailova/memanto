@@ -13,6 +13,8 @@ MEMANTO_SENTINEL_END = "<!-- /MEMANTO-MANAGED-SECTION -->"
 MEMANTO_DYNAMIC_SENTINEL = "<!-- MEMANTO-DYNAMIC-MEMORIES -->"
 MEMANTO_DYNAMIC_SENTINEL_END = "<!-- /MEMANTO-DYNAMIC-MEMORIES -->"
 
+TEMPLATE_VERSION = "1.0.0"
+MEMANTO_VERSION_TAG = f"<!-- memanto-template-version: {TEMPLATE_VERSION} -->"
 
 
 # Shared SKILL.md content (same across all agents)
@@ -174,7 +176,9 @@ memanto remember "Use UUID v4 for all primary keys across all PostgreSQL tables"
 
 
 def _base_instruction_content(
-    agent_id: str = "<agent_name>", tool_phrase: str = "the terminal", note_suffix: str = ""
+    agent_id: str = "<agent_name>",
+    tool_phrase: str = "the terminal",
+    note_suffix: str = "",
 ) -> str:
     """Generate base MEMANTO instruction content, adapted per agent."""
     note_line = ""
@@ -182,6 +186,7 @@ def _base_instruction_content(
         note_line = f"\n> **Note**: {note_suffix}"
 
     return f"""{MEMANTO_SENTINEL}
+{MEMANTO_VERSION_TAG}
 ## MEMANTO - Your Active Memory Companion
 
 > **CRITICAL DIRECTIVE**: You are an agent equipped with Memanto. Without it, you are amnesiac. You have zero memory between chat sessions. Your ability to learn and adapt depends ENTIRELY on you actively writing to Memanto.
@@ -189,7 +194,7 @@ def _base_instruction_content(
 Every memory operation in this session goes through MEMANTO. There is no exception. All memanto commands are **shell commands**. Always run them using {tool_phrase}. Never simulate, describe, or "pretend to call" them.{note_line}
 
 ### 1. THE ABSTRACTION RULE (HOW TO THINK ABOUT MEMORY)
-Users speak naturally and implicitly. When you store a memory, **ELEVATE IT TO A PRINCIPLE**. 
+Users speak naturally and implicitly. When you store a memory, **ELEVATE IT TO A PRINCIPLE**.
 - **WRONG (Activity Log)**: "User told me to use functional components."
 - **RIGHT (Universal Principle)**: "Exclusively use functional components for React UI."
 Do not record the conversation. Record the universal rule.
@@ -220,6 +225,7 @@ For all command syntax, required flags, memory types, tagging best practices, an
 {MEMANTO_DYNAMIC_SENTINEL}
 {MEMANTO_DYNAMIC_SENTINEL_END}
 {MEMANTO_SENTINEL_END}"""
+
 
 def get_instruction_content(agent_name: str) -> str:
     """Get MEMANTO instruction section content for a specific agent."""
@@ -291,4 +297,11 @@ alwaysApply: true
 
 def get_skill_content() -> str:
     """Get the SKILL.md content (shared across all agents)."""
-    return SKILL_MD_CONTENT.strip() + "\n"
+    content = SKILL_MD_CONTENT.strip()
+    # Inject the version tag right after the frontmatter
+    if "---\n\n# MEMANTO Memory Skill" in content:
+        content = content.replace(
+            "---\n\n# MEMANTO Memory Skill",
+            f"---\n\n{MEMANTO_VERSION_TAG}\n\n# MEMANTO Memory Skill",
+        )
+    return content + "\n"

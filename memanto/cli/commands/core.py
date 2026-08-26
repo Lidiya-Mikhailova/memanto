@@ -912,6 +912,27 @@ def status():
     except Exception:
         console.print("[dim]Could not fetch agent list.[/dim]")
 
+    # Check for template updates
+    try:
+        from memanto.cli.connect.templates import TEMPLATE_VERSION
+        from memanto.cli.connect.updater import check_for_updates
+
+        status = check_for_updates(project_dir=".")
+
+        is_outdated = status.get("outdated")
+        installed_version = status.get("installed_version")
+
+        if is_outdated:
+            console.print(f"\n[{BOLD_PRIMARY}]Template Status[/{BOLD_PRIMARY}]")
+            console.print(
+                f"[yellow]⚠️ Outdated (v{installed_version} installed, v{TEMPLATE_VERSION} available)[/yellow]"
+            )
+            console.print(
+                "[yellow]   Run `memanto connect update` to apply the latest instruction hardening.[/yellow]"
+            )
+    except Exception:
+        pass
+
     console.print()
 
 
