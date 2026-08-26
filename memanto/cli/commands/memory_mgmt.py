@@ -196,7 +196,11 @@ def _check_template_updates(project_dir: str):
                 "[yellow]   Run `memanto connect update` to apply the latest instruction hardening.[/yellow]"
             )
     except Exception as e:
-        console.print(f"[dim]Failed to check template update status: {e}[/dim]")
+        try:
+            from memanto.cli.commands._shared import console
+            console.print(f"[dim]Failed to check template update status: {e}[/dim]")
+        except Exception:
+            print(f"Failed to check template update status: {e}")
 
 
 @memory_app.command("sync")

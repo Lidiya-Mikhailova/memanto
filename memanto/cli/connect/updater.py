@@ -16,7 +16,14 @@ def _extract_version(file_path: Path) -> str | None:
         content = file_path.read_text(encoding="utf-8")
         match = re.search(r"<!-- memanto-template-version: ([\d\.]+) -->", content)
         if match:
-            return match.group(1)
+            v_str = match.group(1)
+            try:
+                # Validate all components are integers to prevent malformed versions like 1..2
+                [int(x) for x in v_str.split(".")]
+                return v_str
+            except ValueError:
+                pass
+
         if "<!-- MEMANTO-MANAGED-SECTION -->" in content:
             return "0.0.0"
         return None
@@ -126,9 +133,11 @@ def update_all_agents(
         return ["No active Memanto integrations found to update."]
 
     has_errors = False
+    ran_updates = False
 
     if update_local:
         for agent_name in status.get("active_local", []):
+            ran_updates = True
             res = install_agent(agent_name, project_dir, is_global=False)
             messages.extend(res.get("steps", []))
             if res.get("errors"):
@@ -139,6 +148,7 @@ def update_all_agents(
 
     if update_global:
         for agent_name in status.get("active_global", []):
+            ran_updates = True
             res = install_agent(agent_name, project_dir, is_global=True)
             messages.extend(res.get("steps", []))
             if res.get("errors"):
@@ -146,6 +156,9 @@ def update_all_agents(
                 messages.extend(
                     [f"Error updating global {agent_name}: {e}" for e in res["errors"]]
                 )
+
+    if not ran_updates:
+        return ["No active Memanto integrations found in the selected scope."]
 
     if not has_errors:
         messages.append(
