@@ -181,6 +181,20 @@ def _install_instructions(
     return _inject_into_file(instr_path, content, create_if_missing=True)
 
 
+def _preserve_dynamic_memories(existing: str, new_content: str) -> str:
+    """Extract dynamic memories from existing content and inject them into new content."""
+    from memanto.cli.connect.templates import MEMANTO_DYNAMIC_SENTINEL, MEMANTO_DYNAMIC_SENTINEL_END
+    
+    pattern = re.escape(MEMANTO_DYNAMIC_SENTINEL) + r"(.*?)" + re.escape(MEMANTO_DYNAMIC_SENTINEL_END)
+    match = re.search(pattern, existing, flags=re.DOTALL)
+    if match:
+        dynamic_content = match.group(1)
+        # Avoid backslash issues with replace instead of sub if the content has backslashes
+        replacement = MEMANTO_DYNAMIC_SENTINEL + dynamic_content + MEMANTO_DYNAMIC_SENTINEL_END
+        new_content = re.sub(pattern, replacement.replace("\\", "\\\\"), new_content, flags=re.DOTALL)
+    return new_content
+
+
 def _write_dedicated_file(file_path: Path, content: str) -> str:
     """Write content to a dedicated file (creates parent dirs)."""
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -188,11 +202,12 @@ def _write_dedicated_file(file_path: Path, content: str) -> str:
     if file_path.exists():
         existing = file_path.read_text(encoding="utf-8")
         if MEMANTO_SENTINEL in existing:
+            content = _preserve_dynamic_memories(existing, content)
             # Replace existing section
             pattern = (
                 re.escape(MEMANTO_SENTINEL) + r".*?" + re.escape(MEMANTO_SENTINEL_END)
             )
-            updated = re.sub(pattern, content.strip(), existing, flags=re.DOTALL)
+            updated = re.sub(pattern, content.strip().replace("\\", "\\\\"), existing, flags=re.DOTALL)
             file_path.write_text(updated, encoding="utf-8")
             return f"Updated {file_path.name}"
 
@@ -207,11 +222,12 @@ def _inject_into_file(
     if file_path.exists():
         existing = file_path.read_text(encoding="utf-8")
         if MEMANTO_SENTINEL in existing:
+            section = _preserve_dynamic_memories(existing, section)
             # Replace existing section
             pattern = (
                 re.escape(MEMANTO_SENTINEL) + r".*?" + re.escape(MEMANTO_SENTINEL_END)
             )
-            updated = re.sub(pattern, section.strip(), existing, flags=re.DOTALL)
+            updated = re.sub(pattern, section.strip().replace("\\", "\\\\"), existing, flags=re.DOTALL)
             file_path.write_text(updated, encoding="utf-8")
             return f"Updated MEMANTO section in {file_path.name}"
         else:

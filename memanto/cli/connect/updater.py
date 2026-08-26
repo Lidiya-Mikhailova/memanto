@@ -58,18 +58,20 @@ def check_for_updates(
         local_has_files = False
         inst_path_local = agent.resolve_instruction_file(project_path, False)
         if inst_path_local and inst_path_local.exists():
-            local_has_files = True
             v = _extract_version(inst_path_local)
-            if v and (lowest_version is None or _is_version_lower(v, lowest_version)):
-                lowest_version = v
+            if v is not None:
+                local_has_files = True
+                if lowest_version is None or _is_version_lower(v, lowest_version):
+                    lowest_version = v
 
         skill_dir_local = agent.resolve_skill_local(project_path)
         skill_path_local = skill_dir_local / "SKILL.md"
         if skill_path_local.exists():
-            local_has_files = True
             v = _extract_version(skill_path_local)
-            if v and (lowest_version is None or _is_version_lower(v, lowest_version)):
-                lowest_version = v
+            if v is not None:
+                local_has_files = True
+                if lowest_version is None or _is_version_lower(v, lowest_version):
+                    lowest_version = v
 
         if local_has_files:
             active_local.append(agent.name)
@@ -78,18 +80,20 @@ def check_for_updates(
         global_has_files = False
         inst_path_global = agent.resolve_instruction_file(project_path, True)
         if inst_path_global and inst_path_global.exists():
-            global_has_files = True
             v = _extract_version(inst_path_global)
-            if v and (lowest_version is None or _is_version_lower(v, lowest_version)):
-                lowest_version = v
+            if v is not None:
+                global_has_files = True
+                if lowest_version is None or _is_version_lower(v, lowest_version):
+                    lowest_version = v
 
         skill_dir_global = agent.resolve_skill_global()
         skill_path_global = skill_dir_global / "SKILL.md"
         if skill_path_global.exists():
-            global_has_files = True
             v = _extract_version(skill_path_global)
-            if v and (lowest_version is None or _is_version_lower(v, lowest_version)):
-                lowest_version = v
+            if v is not None:
+                global_has_files = True
+                if lowest_version is None or _is_version_lower(v, lowest_version):
+                    lowest_version = v
 
         if global_has_files:
             active_global.append(agent.name)
@@ -121,11 +125,14 @@ def update_all_agents(
     if not status.get("active_local") and not status.get("active_global"):
         return ["No active Memanto integrations found to update."]
 
+    has_errors = False
+
     if update_local:
         for agent_name in status.get("active_local", []):
             res = install_agent(agent_name, project_dir, is_global=False)
             messages.extend(res.get("steps", []))
             if res.get("errors"):
+                has_errors = True
                 messages.extend(
                     [f"Error updating local {agent_name}: {e}" for e in res["errors"]]
                 )
@@ -135,11 +142,18 @@ def update_all_agents(
             res = install_agent(agent_name, project_dir, is_global=True)
             messages.extend(res.get("steps", []))
             if res.get("errors"):
+                has_errors = True
                 messages.extend(
                     [f"Error updating global {agent_name}: {e}" for e in res["errors"]]
                 )
 
-    messages.append(
-        f"\n🎉 Successfully updated all active templates to v{TEMPLATE_VERSION}!"
-    )
+    if not has_errors:
+        messages.append(
+            f"\n🎉 Successfully updated all active templates to v{TEMPLATE_VERSION}!"
+        )
+    else:
+        messages.append(
+            "\n⚠️ Update completed with errors. Some templates may not have been updated."
+        )
+
     return messages

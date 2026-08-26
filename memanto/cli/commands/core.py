@@ -930,8 +930,8 @@ def status():
             console.print(
                 "[yellow]   Run `memanto connect update` to apply the latest instruction hardening.[/yellow]"
             )
-    except Exception:
-        pass
+    except Exception as e:
+        console.print(f"[dim]Failed to check template update status: {e}[/dim]")
 
     console.print()
 
