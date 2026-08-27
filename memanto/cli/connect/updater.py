@@ -162,11 +162,11 @@ def update_all_agents(
 
     if not has_errors:
         messages.append(
-            f"\n🎉 Successfully updated all active templates to v{TEMPLATE_VERSION}!"
+            f"\n🎉 Successfully updated all active agent instructions to v{TEMPLATE_VERSION}!"
         )
     else:
         messages.append(
-            "\n⚠️ Update completed with errors. Some templates may not have been updated."
+            "\n⚠️ Update completed with errors. Some instructions may not have been updated."
         )
 
     return messages

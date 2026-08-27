@@ -3413,7 +3413,7 @@
           "Web UI"
         ],
         "summary": "Get Template Status",
-        "description": "Check if agent instruction templates are outdated.",
+        "description": "Check if agent instructions are outdated.",
         "operationId": "get_template_status_api_ui_template_status_get",
         "responses": {
           "200": {
@@ -3433,7 +3433,7 @@
           "Web UI"
         ],
         "summary": "Get Template Status Dismissed",
-        "description": "Get the currently dismissed template version.",
+        "description": "Get the currently dismissed instruction version.",
         "operationId": "get_template_status_dismissed_api_ui_template_status_dismissed_get",
         "responses": {
           "200": {
@@ -3453,7 +3453,7 @@
           "Web UI"
         ],
         "summary": "Dismiss Template Status",
-        "description": "Dismiss the template update warning for the current version.",
+        "description": "Dismiss the instruction update warning for the current version.",
         "operationId": "dismiss_template_status_api_ui_template_status_dismiss_post",
         "responses": {
           "200": {
@@ -3473,7 +3473,7 @@
           "Web UI"
         ],
         "summary": "Apply Template Update",
-        "description": "Update all active Memanto templates in the workspace and globally.",
+        "description": "Update all active Memanto agent instructions in the workspace and globally.",
         "operationId": "apply_template_update_api_ui_template_status_update_post",
         "responses": {
           "200": {

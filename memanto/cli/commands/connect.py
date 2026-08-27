@@ -105,7 +105,7 @@ def update_templates(
         ".", "--project-dir", "-p", help="Target project directory"
     ),
 ):
-    """Update all active Memanto templates (both local and global) to the latest version."""
+    """Update all active Memanto agent instructions (both local and global) to the latest version."""
     from memanto.cli.connect.updater import update_all_agents
 
     messages = update_all_agents(project_dir, update_global=True, update_local=True)

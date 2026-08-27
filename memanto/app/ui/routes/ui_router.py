@@ -842,7 +842,7 @@ async def browse_path(
 
 @router.get("/api/ui/template-status")
 async def get_template_status(_: None = Depends(_require_local)):
-    """Check if agent instruction templates are outdated."""
+    """Check if agent instructions are outdated."""
     from memanto.cli.connect.templates import TEMPLATE_VERSION
     from memanto.cli.connect.updater import check_for_updates
 
@@ -856,14 +856,14 @@ async def get_template_status(_: None = Depends(_require_local)):
 
 @router.get("/api/ui/template-status/dismissed")
 async def get_template_status_dismissed(_: None = Depends(_require_local)):
-    """Get the currently dismissed template version."""
+    """Get the currently dismissed instruction version."""
     dismissed = _config_manager.get("cli.dismissed_template_version", "")
     return {"version": dismissed}
 
 
 @router.post("/api/ui/template-status/dismiss")
 async def dismiss_template_status(_: None = Depends(_require_local)):
-    """Dismiss the template update warning for the current version."""
+    """Dismiss the instruction update warning for the current version."""
     from memanto.cli.connect.templates import TEMPLATE_VERSION
 
     _config_manager.set("cli.dismissed_template_version", TEMPLATE_VERSION)
@@ -872,7 +872,7 @@ async def dismiss_template_status(_: None = Depends(_require_local)):
 
 @router.post("/api/ui/template-status/update")
 async def apply_template_update(_: None = Depends(_require_local)):
-    """Update all active Memanto templates in the workspace and globally."""
+    """Update all active Memanto agent instructions in the workspace and globally."""
     from memanto.cli.connect.updater import update_all_agents
 
     try:

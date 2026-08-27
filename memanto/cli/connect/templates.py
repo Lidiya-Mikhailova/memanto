@@ -222,9 +222,10 @@ Do not guess or write code blindly. Run `memanto recall` (or `memanto answer`) u
 ### 5. HOW TO EXECUTE
 For all command syntax, required flags, memory types, tagging best practices, and CLI options, refer to the `memanto-memory` SKILL.md. You MUST read this skill before running any memory operations if you do not know the exact command schema.
 
+{MEMANTO_SENTINEL_END}
+
 {MEMANTO_DYNAMIC_SENTINEL}
-{MEMANTO_DYNAMIC_SENTINEL_END}
-{MEMANTO_SENTINEL_END}"""
+{MEMANTO_DYNAMIC_SENTINEL_END}"""
 
 
 def get_instruction_content(agent_name: str) -> str:

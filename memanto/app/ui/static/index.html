@@ -2363,15 +2363,15 @@
             <!-- DASHBOARD -->
             <section class="page active" id="page-dashboard">
                 <!-- Update Banner (Hidden by default) -->
-                <div id="templateUpdateBanner" style="display: none; background: #fff3cd; color: #856404; padding: 12px 20px; border-radius: 6px; margin: 0 0 20px 0; border: 1px solid #ffeeba; align-items: center; justify-content: space-between;">
+                <div id="templateUpdateBanner" style="display: none; background: #fff3cd; color: #856404; padding: 8px 16px; border-radius: 4px; margin: 0 0 16px 0; border: 1px solid #ffeeba; align-items: center; justify-content: space-between; font-size: 14px;">
                     <div>
-                        <span style="margin-right: 8px;">⚠️</span>
-                        <strong style="margin-right: 4px;">Template Update Available</strong>
-                        <span id="templateUpdateMsg">Your workspace is using an outdated instruction template.</span>
+                        <span style="margin-right: 6px;">⚠️</span>
+                        <strong style="margin-right: 4px;">Agent Instruction Update Available</strong>
+                        <span id="templateUpdateMsg">Your workspace is using outdated agent instructions.</span>
                     </div>
-                    <div style="display: flex; gap: 10px;">
-                        <button onclick="dismissTemplateUpdate()" style="background: transparent; border: 1px solid #856404; color: #856404; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">Dismiss</button>
-                        <button onclick="updateTemplates()" style="background: #856404; border: none; color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">Update Now</button>
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="dismissTemplateUpdate()" style="background: transparent; border: 1px solid #856404; color: #856404; padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">Dismiss</button>
+                        <button onclick="updateTemplates()" style="background: #856404; border: none; color: white; padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">Update Now</button>
                     </div>
                 </div>
                 <div class="page-header">
@@ -2887,7 +2887,7 @@
                 if (status.outdated && status.installed_version) {
                     const dismissed = await api('GET', `/api/ui/template-status/dismissed?_t=${ts}`);
                     if (dismissed && dismissed.version !== status.latest_version) {
-                        document.getElementById('templateUpdateMsg').innerText = `Your workspace is using an outdated instruction template (v${status.installed_version}). Version ${status.latest_version} is now available.`;
+                        document.getElementById('templateUpdateMsg').innerText = `Your workspace is using outdated agent instructions (v${status.installed_version}). Version ${status.latest_version} is now available.`;
                         banner.style.display = 'flex';
                     } else {
                         banner.style.display = 'none';
