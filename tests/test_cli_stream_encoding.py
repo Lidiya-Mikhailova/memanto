@@ -19,26 +19,26 @@ from memanto.cli import _ensure_utf8_streams
 RICH_GLYPHS = "⠹⠦ ┌─┐ ● —"
 
 
-class FakeStream(io.StringIO):
-    """Text stream with a settable encoding that records reconfigure() calls."""
+class FakeStream:
+    """Stand-in for sys.stdout that records reconfigure() calls.
+
+    Deliberately not an io.StringIO subclass: StringIO.encoding is a writable
+    attribute, so overriding it with a property is a typing error. The helper
+    only needs the three members _ensure_utf8_streams touches.
+    """
 
     def __init__(self, encoding: str, isatty: bool = False):
-        super().__init__()
-        self._encoding = encoding
+        self.encoding = encoding
         self._isatty = isatty
         self.reconfigured: list[dict] = []
-
-    @property
-    def encoding(self) -> str:
-        return self._encoding
 
     def isatty(self) -> bool:
         return self._isatty
 
-    def reconfigure(self, **kwargs):
+    def reconfigure(self, **kwargs) -> None:
         self.reconfigured.append(kwargs)
         if "encoding" in kwargs:
-            self._encoding = kwargs["encoding"]
+            self.encoding = kwargs["encoding"]
 
 
 def _run(monkeypatch, stdout, stderr):
