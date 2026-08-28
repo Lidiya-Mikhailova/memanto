@@ -13,10 +13,10 @@ from typing import Any
 from memanto.cli.config.manager import ConfigManager
 from memanto.cli.connect.agent_registry import AGENT_REGISTRY, AgentDef
 from memanto.cli.connect.templates import (
-    MEMANTO_SENTINEL,
-    MEMANTO_SENTINEL_END,
     MEMANTO_DYNAMIC_SENTINEL,
     MEMANTO_DYNAMIC_SENTINEL_END,
+    MEMANTO_SENTINEL,
+    MEMANTO_SENTINEL_END,
     get_instruction_content,
     get_skill_content,
 )
@@ -186,10 +186,12 @@ def _install_instructions(
 def _strip_dynamic_block(text: str) -> str:
     """Remove the dynamic memory block from the text."""
     return re.sub(
-        re.escape(MEMANTO_DYNAMIC_SENTINEL) + r".*?" + re.escape(MEMANTO_DYNAMIC_SENTINEL_END),
+        re.escape(MEMANTO_DYNAMIC_SENTINEL)
+        + r".*?"
+        + re.escape(MEMANTO_DYNAMIC_SENTINEL_END),
         "",
         text,
-        flags=re.DOTALL
+        flags=re.DOTALL,
     ).strip()
 
 
@@ -301,7 +303,11 @@ def _remove_instructions(
         modified = True
 
     if MEMANTO_DYNAMIC_SENTINEL in existing:
-        pattern2 = re.escape(MEMANTO_DYNAMIC_SENTINEL) + r".*?" + re.escape(MEMANTO_DYNAMIC_SENTINEL_END)
+        pattern2 = (
+            re.escape(MEMANTO_DYNAMIC_SENTINEL)
+            + r".*?"
+            + re.escape(MEMANTO_DYNAMIC_SENTINEL_END)
+        )
         existing = re.sub(pattern2, "", existing, flags=re.DOTALL)
         modified = True
 

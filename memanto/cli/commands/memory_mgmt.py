@@ -198,6 +198,7 @@ def _check_template_updates(project_dir: str):
     except Exception as e:
         try:
             from memanto.cli.commands._shared import console
+
             console.print(f"[dim]Failed to check instruction update status: {e}[/dim]")
         except Exception:
             print(f"Failed to check instruction update status: {e}")

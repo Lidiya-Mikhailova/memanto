@@ -923,7 +923,9 @@ def status():
         installed_version = status.get("installed_version")
 
         if is_outdated:
-            console.print(f"\n[{BOLD_PRIMARY}]Agent Instruction Status[/{BOLD_PRIMARY}]")
+            console.print(
+                f"\n[{BOLD_PRIMARY}]Agent Instruction Status[/{BOLD_PRIMARY}]"
+            )
             console.print(
                 f"[yellow]⚠️ Outdated (v{installed_version} installed, v{TEMPLATE_VERSION} available)[/yellow]"
             )

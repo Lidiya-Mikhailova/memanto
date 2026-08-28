@@ -193,19 +193,27 @@ def _base_instruction_content(
 
 Every memory operation in this session goes through MEMANTO. There is no exception. All memanto commands are **shell commands**. Always run them using {tool_phrase}. Never simulate, describe, or "pretend to call" them.{note_line}
 
-### 1. THE ABSTRACTION RULE (HOW TO THINK ABOUT MEMORY)
+### 1. ENVIRONMENT-AWARE EXECUTION PROTOCOL
+Before you write any code or provide a final answer, you MUST evaluate if the current context contains new memory triggers.
+
+You must actively evaluate:
+1. PREFERENCE: Did the user state a [USER PREFERENCE / RULE]? (e.g., code formatting style, choice of library, or tool preference)
+2. GOAL: Did we establish or reach a [GOAL / MILESTONE]? (e.g., target feature completion, roadmap deliverable, or sprint objective)
+3. FAILURE: Did we learn a [CORRECTION / FAILURE LESSON] from an error, tool, or test? (e.g., a bug fix workaround, error post-mortem, or test failure insight)
+4. SYSTEM: Did we uncover a [DOMAIN INVARIANT / SYSTEM QUIRK]? (e.g., a technical constraint, API quirk, or dependency behavior)
+5. ENVIRONMENT: Was a key [ENVIRONMENT FACT] verified? (e.g., OS behavior, path layout, or tool version requirement)
+
+**How to Execute the Evaluation:**
+- **If you are operating in Claude Code / Anthropic Web UI:** You MUST perform this evaluation inside a `<thinking>` block at the very start of your turn.
+- **For all other environments:** Evaluate SILENTLY. Do NOT output `<thinking>` blocks or internal monologue.
+
+If any trigger applies, your FIRST action must be to execute the `memanto remember` command via the terminal.
+
+### 2. THE ABSTRACTION RULE (HOW TO THINK ABOUT MEMORY)
 Users speak naturally and implicitly. When you store a memory, **ELEVATE IT TO A PRINCIPLE**.
 - **WRONG (Activity Log)**: "User told me to use functional components."
 - **RIGHT (Universal Principle)**: "Exclusively use functional components for React UI."
 Do not record the conversation. Record the universal rule.
-
-### 2. THE TRIGGER MATRIX (WHEN TO STORE)
-Do not wait to be asked. If any of the following occur, your VERY FIRST ACTION must be to use {tool_phrase} to run `memanto remember`. Do not answer the user first.
-- **[USER PREFERENCE / RULE]** The user explicitly or implicitly states a convention, tool preference, or coding rule (e.g., "Use Tailwind v4", "Never use lodash", "Prefer async/await").
-- **[ARCHITECTURAL DECISION]** A decision is made regarding project structure, stack choice, DB schema, or API design (e.g., "Selected PostgreSQL with Prisma ORM").
-- **[CORRECTION / FAILURE LESSON]** You attempt an approach that fails and find a workaround, or the user corrects your code or mistake (e.g., "Must pass --no-cache when running build script").
-- **[GOAL / MILESTONE]** A milestone is reached, or a project roadmap/commitment is confirmed (e.g., "Phase 1 API complete, starting UI next").
-- **[ENVIRONMENT FACT]** A key technical fact about the user's workspace, OS, or toolchain is verified (e.g., "Runs on Windows PowerShell 5.1 with Python 3.11").
 
 ### 3. THE DURABILITY TEST (WHAT NOT TO STORE)
 Before storing, ask yourself: *"Will this generalized principle fundamentally change how I generate code for this user 3 months from now?"*
@@ -230,6 +238,7 @@ For all command syntax, required flags, memory types, tagging best practices, an
 
 def get_instruction_content(agent_name: str) -> str:
     """Get MEMANTO instruction section content for a specific agent."""
+
     templates = {
         "claude-code": _base_instruction_content(
             agent_id="claude-code",
@@ -275,7 +284,7 @@ def get_instruction_content(agent_name: str) -> str:
         "github-copilot": _base_instruction_content(
             agent_id="github-copilot",
             tool_phrase="the terminal",
-            note_suffix="Run `memanto memory sync --project-dir .` at the start of each session to inject the latest dynamic memories into your system instructions. DO NOT write project-specific rules to the global `User/prompts/` directory to avoid context dilution—rely exclusively on Memanto and the `CLAUDE.md` Hot Cache.",
+            note_suffix="Run `memanto memory sync --project-dir .` at the start of each session to inject the latest dynamic memories into your system instructions. DO NOT write project-specific rules to the global `User/prompts/` directory to avoid context dilution—rely exclusively on Memanto.",
         ),
         "augment": _base_instruction_content(
             agent_id="augment",
